@@ -23,7 +23,7 @@
     "eslint-scope": "^5.0.0",
     "ethereumjs-util": "^7.0.10",
     "ethers": "^5.1.4",
-    "solc": "^0.7.4",
+    "solc": "^0.8.5",
     "web3": "1.2.4",
     "webworkify-webpack": "^2.1.5"
   },
