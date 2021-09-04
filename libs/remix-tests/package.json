@@ -52,7 +52,7 @@
     "ethereumjs-util": "^7.0.10",
     "ethers": "^5.4.2",
     "express-ws": "^4.0.0",
-    "merge": "^1.2.0",
+    "merge": "^2.1.1",
     "signale": "^1.4.0",
     "string-similarity": "^4.0.4",
     "time-stamp": "^2.2.0",
