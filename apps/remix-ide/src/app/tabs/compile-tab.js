@@ -1,18 +1,15 @@
 /* global */
 import React from 'react' // eslint-disable-line
-import ReactDOM from 'react-dom'
-import { SolidityCompiler, CompileTab as CompileTabLogic, parseContracts } from '@remix-ui/solidity-compiler' // eslint-disable-line
-import { compile } from '@remix-project/remix-solidity'
+import { SolidityCompiler } from '@remix-ui/solidity-compiler' // eslint-disable-line
+import { CompileTabLogic } from '@remix-ui/solidity-compiler' // eslint-disable-line
+import { CompilerApiMixin } from '@remix-ui/solidity-compiler'
 import { ViewPlugin } from '@remixproject/engine-web'
+import { QueryParams } from '@remix-project/remix-lib'
+// import { ICompilerApi } from '@remix-project/remix-lib'
 import * as packageJson from '../../../../../package.json'
-
-const EventEmitter = require('events')
-const $ = require('jquery')
-const yo = require('yo-yo')
-var QueryParams = require('../../lib/query-params')
-const addTooltip = require('../ui/tooltip')
-const globalRegistry = require('../../global/registry')
-
+import { compilerConfigChangedToastMsg, compileToastMsg } from '@remix-ui/helper'
+import { isNative } from '../../remixAppManager'
+import { Registry } from '@remix-project/remix-lib'
 const profile = {
   name: 'solidity',
   displayName: 'Solidity compiler',
@@ -21,224 +18,80 @@ const profile = {
   kind: 'compiler',
   permission: true,
   location: 'sidePanel',
-  documentation: 'https://remix-ide.readthedocs.io/en/latest/solidity_editor.html',
+  documentation: 'https://remix-ide.readthedocs.io/en/latest/compile.html',
   version: packageJson.version,
-  methods: ['getCompilationResult', 'compile', 'compileWithParameters', 'setCompilerConfig', 'compileFile']
+  maintainedBy: 'Remix',
+  methods: ['getCompilationResult', 'compile', 'compileWithParameters', 'setCompilerConfig', 'compileFile', 'getCompilerState', 'getCompilerConfig', 'getCompilerQueryParameters', 'getCompiler']
 }
 
 // EditorApi:
 // - events: ['compilationFinished'],
 // - methods: ['getCompilationResult']
 
-class CompileTab extends ViewPlugin {
-  constructor (editor, config, fileProvider, fileManager, contentImport) {
+export default class CompileTab extends CompilerApiMixin(ViewPlugin) { // implements ICompilerApi
+  constructor(config, fileManager) {
     super(profile)
-    this.events = new EventEmitter()
-    this._view = {
-      el: null,
-      warnCompilationSlow: null,
-      errorContainer: null,
-      contractEl: null
-    }
-    this.contentImport = contentImport
-    this.queryParams = new QueryParams()
-    this.fileProvider = fileProvider
-    // dependencies
-    this.editor = editor
-    this.config = config
     this.fileManager = fileManager
-    this.contractsDetails = {}
-    this.data = {
-      eventHandlers: {},
-      loading: false
-    }
+    this.config = config
+    this.queryParams = new QueryParams()
     this.compileTabLogic = new CompileTabLogic(this, this.contentImport)
     this.compiler = this.compileTabLogic.compiler
     this.compileTabLogic.init()
-    this.contractMap = {}
-    this.isHardHatProject = false
-    this.compileErrors = {}
-    this.compiledFileName = ''
-    this.selectedVersion = ''
-    this.configurationSettings = null
-
+    this.initCompilerApi()
     this.el = document.createElement('div')
     this.el.setAttribute('id', 'compileTabView')
   }
 
-  resetResults () {
-    this.currentFile = ''
-    this.contractsDetails = {}
-    this.emit('statusChanged', { key: 'none' })
+  renderComponent() {
+    // empty method, is a state update needed?
+  }
+
+  onCurrentFileChanged() {
     this.renderComponent()
   }
 
-  setCompileErrors (data) {
-    this.compileErrors = data
+  // onResetResults () {
+  //   this.renderComponent()
+  // }
+
+  onSetWorkspace() {
     this.renderComponent()
   }
 
-  /************
-   * EVENTS
-   */
-
-  listenToEvents () {
-    this.data.eventHandlers.onContentChanged = () => {
-      this.emit('statusChanged', { key: 'edited', title: 'the content has changed, needs recompilation', type: 'info' })
-    }
-    this.editor.event.register('contentChanged', this.data.eventHandlers.onContentChanged)
-
-    this.data.eventHandlers.onLoadingCompiler = () => {
-      this.data.loading = true
-      this.emit('statusChanged', { key: 'loading', title: 'loading compiler...', type: 'info' })
-    }
-    this.compiler.event.register('loadingCompiler', this.data.eventHandlers.onLoadingCompiler)
-
-    this.data.eventHandlers.onCompilerLoaded = () => {
-      this.data.loading = false
-      this.emit('statusChanged', { key: 'none' })
-    }
-    this.compiler.event.register('compilerLoaded', this.data.eventHandlers.onCompilerLoaded)
-
-    this.data.eventHandlers.onStartingCompilation = () => {
-      this.emit('statusChanged', { key: 'loading', title: 'compiling...', type: 'info' })
-    }
-
-    this.data.eventHandlers.onRemoveAnnotations = () => {
-      this.call('editor', 'clearAnnotations')
-    }
-
-    const resetView = (isLocalhost) => {
-      this.compileTabLogic.isHardhatProject().then((result) => {
-        if (result && isLocalhost) this.isHardHatProject = true
-        else this.isHardHatProject = false
-        this.renderComponent()
-      })
-      this.resetResults()
-    }
-
-    this.on('filePanel', 'setWorkspace', (workspace) => {
-      resetView(workspace.isLocalhost)
-    })
-
-    this.on('remixd', 'rootFolderChanged', () => {
-      resetView(true)
-    })
-
-    this.compileTabLogic.event.on('startingCompilation', this.data.eventHandlers.onStartingCompilation)
-    this.compileTabLogic.event.on('removeAnnotations', this.data.eventHandlers.onRemoveAnnotations)
-
-    this.data.eventHandlers.onCurrentFileChanged = (name) => {
-      this.currentFile = name
-      this.renderComponent()
-    }
-    this.fileManager.events.on('currentFileChanged', this.data.eventHandlers.onCurrentFileChanged)
-
-    this.data.eventHandlers.onNoFileSelected = () => {
-      this.currentFile = ''
-      this.renderComponent()
-    }
-    this.fileManager.events.on('noFileSelected', this.data.eventHandlers.onNoFileSelected)
-
-    this.data.eventHandlers.onCompilationFinished = (success, data, source) => {
-      this.setCompileErrors(data)
-      if (success) {
-        // forwarding the event to the appManager infra
-        this.emit('compilationFinished', source.target, source, 'soljson', data)
-        if (data.errors && data.errors.length > 0) {
-          this.emit('statusChanged', {
-            key: data.errors.length,
-            title: `compilation finished successful with warning${data.errors.length > 1 ? 's' : ''}`,
-            type: 'warning'
-          })
-        } else this.emit('statusChanged', { key: 'succeed', title: 'compilation successful', type: 'success' })
-        // Store the contracts
-        this.contractsDetails = {}
-        this.compiler.visitContracts((contract) => {
-          this.contractsDetails[contract.name] = parseContracts(
-            contract.name,
-            contract.object,
-            this.compiler.getSource(contract.file)
-          )
-        })
-      } else {
-        const count = (data.errors ? data.errors.filter(error => error.severity === 'error').length : 0 + data.error ? 1 : 0)
-        this.emit('statusChanged', { key: count, title: `compilation failed with ${count} error${count.length > 1 ? 's' : ''}`, type: 'error' })
-      }
-      // Update contract Selection
-      this.contractMap = {}
-      if (success) this.compiler.visitContracts((contract) => { this.contractMap[contract.name] = contract })
-      this.renderComponent()
-    }
-    this.compiler.event.register('compilationFinished', this.data.eventHandlers.onCompilationFinished)
-
-    this.data.eventHandlers.onThemeChanged = (theme) => {
-      const invert = theme.quality === 'dark' ? 1 : 0
-      const img = document.getElementById('swarmLogo')
-      if (img) {
-        img.style.filter = `invert(${invert})`
-      }
-    }
-    globalRegistry.get('themeModule').api.events.on('themeChanged', this.data.eventHandlers.onThemeChanged)
-
-    // Run the compiler instead of trying to save the website
-    $(window).keydown((e) => {
-      // ctrl+s or command+s
-      if ((e.metaKey || e.ctrlKey) && e.keyCode === 83) {
-        e.preventDefault()
-        this.compileTabLogic.runCompiler(this.hhCompilation)
-      }
-    })
+  onFileRemoved() {
+    this.renderComponent()
   }
 
-  setHardHatCompilation (value) {
-    this.hhCompilation = value
+  onNoFileSelected() {
+    this.renderComponent()
   }
 
-  setSelectedVersion (version) {
-    this.selectedVersion = version
+  onFileClosed() {
+    this.renderComponent()
   }
 
-  getCompilationResult () {
-    return this.compileTabLogic.compiler.state.lastCompilationResult
+  onCompilationFinished() {
+    this.renderComponent()
   }
 
-  addExternalFile (fileName, content) {
-    this.fileProvider.addExternal(fileName, content)
+  render() {
+    return <div id='compileTabView'><SolidityCompiler api={this} /></div>
   }
 
-  /**
-   * compile using @arg fileName.
-   * The module UI will be updated accordingly to the new compilation result.
-   * This function is used by remix-plugin compiler API.
-   * @param {string} fileName to compile
-   */
-  compile (fileName) {
-    addTooltip(yo`<div><b>${this.currentRequest.from}</b> is requiring to compile <b>${fileName}</b></div>`)
-    return this.compileTabLogic.compileFile(fileName)
+  async compileWithParameters(compilationTargets, settings) {
+    return await super.compileWithParameters(compilationTargets, settings)
   }
 
-  /**
-   * compile using @arg compilationTargets and @arg settings
-   * The module UI will *not* be updated, the compilation result is returned
-   * This function is used by remix-plugin compiler API.
-   * @param {object} map of source files.
-   * @param {object} settings {evmVersion, optimize, runs, version, language}
-   */
-  async compileWithParameters (compilationTargets, settings) {
-    settings.version = settings.version || this.selectedVersion
-    const res = await compile(compilationTargets, settings)
-    return res
+  getCompilationResult() {
+    return super.getCompilationResult()
   }
 
-  // This function is used for passing the compiler configuration to 'remix-tests'
-  getCurrentCompilerConfig () {
-    return {
-      currentVersion: this.selectedVersion,
-      evmVersion: this.compileTabLogic.evmVersion,
-      optimize: this.compileTabLogic.optimize,
-      runs: this.compileTabLogic.runs
-    }
+  getFileManagerMode() {
+    return this.fileManager.mode
+  }
+
+  isDesktop() {
+    return Registry.getInstance().get('platform').api.isDesktop()
   }
 
   /**
@@ -246,124 +99,95 @@ class CompileTab extends ViewPlugin {
    * This function is used by remix-plugin compiler API.
    * @param {object} settings {evmVersion, optimize, runs, version, language}
    */
-  setCompilerConfig (settings) {
-    this.configurationSettings = settings
+  async setCompilerConfig(settings) {
+    super.setCompilerConfig(settings)
     this.renderComponent()
     // @todo(#2875) should use loading compiler return value to check whether the compiler is loaded instead of "setInterval"
-    addTooltip(yo`<div><b>${this.currentRequest.from}</b> is updating the <b>Solidity compiler configuration</b>.<pre class="text-left">${JSON.stringify(settings, null, '\t')}</pre></div>`)
-  }
+    const value = JSON.stringify(settings, null, '\t')
+    let pluginInfo
+    pluginInfo = await this.call('udapp', 'showPluginDetails')
 
-  // TODO : Add success alert when compilation succeed
-  contractCompiledSuccess () {
-    return yo`<div></div>`
-  }
-
-  // TODO : Add error alert when compilation failed
-  contractCompiledError () {
-    return yo`<div></div>`
-  }
-
-  /************
-   * METHODS
-   */
-
-  selectContract (contractName) {
-    this.selectedContract = contractName
-  }
-
-  render () {
-    this.renderComponent()
-    return this.el
-  }
-
-  renderComponent () {
-    ReactDOM.render(
-      <SolidityCompiler plugin={this}/>
-      , this.el)
-  }
-
-  getParameters () {
-    return this.queryParams.get()
-  }
-
-  setParameters (params) {
-    this.queryParams.update(params)
-  }
-
-  getConfiguration (name) {
-    return this.config.get(name)
-  }
-
-  setConfiguration (name, value) {
-    this.config.set(name, value)
-  }
-
-  fileProviderOf (fileName) {
-    return this.fileManager.fileProviderOf(fileName)
-  }
-
-  getFileManagerMode () {
-    return this.fileManager.mode
-  }
-
-  fileExists (fileName) {
-    return this.call('fileManager', 'exists', fileName)
-  }
-
-  writeFile (fileName, content) {
-    return this.call('fileManager', 'writeFile', fileName, content)
-  }
-
-  readFile (fileName) {
-    return this.call('fileManager', 'readFile', fileName)
-  }
-
-  saveCurrentFile () {
-    return this.fileManager.saveCurrentFile()
-  }
-
-  open (fileName) {
-    return this.call('fileManager', 'open', fileName)
-  }
-
-  onActivation () {
-    this.call('manager', 'activatePlugin', 'solidity-logic')
-    this.listenToEvents()
-    this.call('filePanel', 'registerContextMenuItem', {
-      id: 'solidity',
-      name: 'compileFile',
-      label: 'Compile',
-      type: [],
-      extension: ['.sol'],
-      path: [],
-      pattern: []
-    })
-  }
-
-  // Returns if the compilation was successfull
-  async compileFile (event) {
-    if (event.path.length > 0) {
-      try {
-        return await this.compileTabLogic.compileFile(event.path[0])
-      } catch (error) {
-        return false
-      }
+    if (this.currentRequest.from === 'udapp') {
+      this.call('notification', 'toast', compilerConfigChangedToastMsg((pluginInfo ? pluginInfo.displayName : this.currentRequest.from), value))
     }
-    return false
   }
 
-  onDeactivation () {
-    this.editor.event.unregister('contentChanged')
-    this.editor.event.unregister('sessionSwitched')
-    this.editor.event.unregister('contentChanged', this.data.eventHandlers.onContentChanged)
-    this.compiler.event.unregister('loadingCompiler', this.data.eventHandlers.onLoadingCompiler)
-    this.compiler.event.unregister('compilerLoaded', this.data.eventHandlers.onCompilerLoaded)
-    this.compileTabLogic.event.removeListener('startingCompilation', this.data.eventHandlers.onStartingCompilation)
-    this.fileManager.events.removeListener('currentFileChanged', this.data.eventHandlers.onCurrentFileChanged)
-    this.fileManager.events.removeListener('noFileSelected', this.data.eventHandlers.onNoFileSelected)
-    this.compiler.event.unregister('compilationFinished', this.data.eventHandlers.onCompilationFinished)
-    globalRegistry.get('themeModule').api.events.removeListener('themeChanged', this.data.eventHandlers.onThemeChanged)
-    this.call('manager', 'deactivatePlugin', 'solidity-logic')
+  async getCompilerConfig() {
+    return await super.getCompilerConfig()
+  }
+
+  compile(fileName) {
+    if (!isNative(this.currentRequest.from)) this.call('notification', 'toast', compileToastMsg(this.currentRequest.from, fileName))
+    super.compile(fileName)
+  }
+
+  compileFile(event) {
+    return super.compileFile(event)
+  }
+
+  async onActivation() {
+    super.onActivation()
+    this.on('filePanel', 'workspaceInitializationCompleted', () => {
+      this.call('filePanel', 'registerContextMenuItem', {
+        id: 'solidity',
+        name: 'compileFile',
+        label: 'Compile',
+        type: [],
+        extension: ['.sol'],
+        path: [],
+        pattern: [],
+        group: 6
+      })
+      this.on('fileManager', 'fileSaved', async (file) => {
+        if(await this.getAppParameter('configFilePath') === file) {
+          this.emit('configFileChanged', file)
+        }
+      })
+      this.on('fileManager', 'fileAdded', async (file) => {
+        if(await this.getAppParameter('configFilePath') === file) {
+          this.emit('configFileChanged', file)
+        }
+      })
+    })
+    try {
+      this.currentFile = await this.call('fileManager', 'file')
+    } catch (error) {
+      if (error.message !== 'Error: No such file or directory No file selected') throw error
+    }
+  }
+
+  getCompiler() {
+    return this.compileTabLogic.compiler
+  }
+
+  getCompilerQueryParameters() {
+    const params = this.queryParams.get()
+    params.evmVersion = params.evmVersion === 'null' || params.evmVersion === 'undefined' ? null : params.evmVersion
+    params.optimize = (params.optimize === 'false' || params.optimize === null || params.optimize === undefined) ? false : params.optimize
+    params.optimize = params.optimize === 'true' ? true : params.optimize
+    return params
+  }
+
+  setCompilerQueryParameters(params) {
+    this.queryParams.update(params)
+    try {
+      this.emit('compilerQueryParamsUpdated')
+    } catch (e) {
+      // do nothing
+    }
+  }
+
+  async getAppParameter(name) {
+    return await this.call('config', 'getAppParameter', name)
+  }
+
+  async setAppParameter(name, value) {
+    await this.call('config', 'setAppParameter', name, value)
+    try {
+      this.emit('compilerAppParamsUpdated')
+    } catch (e) {
+      // do nothing
+    }
   }
 }
 

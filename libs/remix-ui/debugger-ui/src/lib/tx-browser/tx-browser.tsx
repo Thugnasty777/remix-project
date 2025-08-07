@@ -1,22 +1,30 @@
-import React, { useState, useEffect, useRef } from 'react'  //eslint-disable-line
+import { CustomTooltip, isValidHash } from '@remix-ui/helper'
+import React, {useState, useEffect, useRef} from 'react' //eslint-disable-line
+import { useIntl, FormattedMessage } from 'react-intl'
 import './tx-browser.css'
 
 export const TxBrowser = ({ requestDebug, updateTxNumberFlag, unloadRequested, transactionNumber, debugging }) => {
   const [state, setState] = useState({
-    txNumber: ''
+    txNumber: '',
+    isTxNumberValid: false
   })
 
   const inputValue = useRef(null)
+
+  const intl = useIntl()
+
   useEffect(() => {
-    setState(prevState => {
+    setState((prevState) => {
       return {
         ...prevState,
-        txNumber: transactionNumber
+        txNumber: transactionNumber,
+        isTxNumberValid: isValidHash(transactionNumber),
       }
     })
-  }, [transactionNumber])
+  }, [transactionNumber, debugging])
 
   const handleSubmit = () => {
+    if (!state.txNumber || !state.isTxNumberValid) return
     if (debugging) {
       unload()
     } else {
@@ -29,14 +37,10 @@ export const TxBrowser = ({ requestDebug, updateTxNumberFlag, unloadRequested, t
   }
 
   const txInputChanged = (value) => {
-    // todo check validation of txnumber in the input element, use
-    // required
-    // oninvalid="setCustomValidity('Please provide a valid transaction number, must start with 0x and have length of 22')"
-    // pattern="^0[x,X]+[0-9a-fA-F]{22}"
-    // this.state.txNumberInput.setCustomValidity('')
-    setState(prevState => {
+    setState((prevState) => {
       return {
         ...prevState,
+        isTxNumberValid: isValidHash(value),
         txNumber: value
       }
     })
@@ -46,37 +50,56 @@ export const TxBrowser = ({ requestDebug, updateTxNumberFlag, unloadRequested, t
     updateTxNumberFlag(!inputValue.current.value)
   }
 
+  const customJSX = (
+    <div
+      id="debuggerTransactionStartButtonContainer"
+      data-id="debuggerTransactionStartButton"
+      onClick={handleSubmit}
+      className={`${!state.isTxNumberValid ? 'disabled ' : ''} btn btn-primary btn-sm btn-block text-decoration-none`}
+    >
+      <button
+        className={`${!state.isTxNumberValid ? 'disabled ' : ''} btn btn-link btn-sm btn-block h-75 p-0 m-0 text-decoration-none`}
+        id="load"
+        onClick={handleSubmit}
+        data-id="debuggerTransactionStartButton"
+        disabled={!state.txNumber || !state.isTxNumberValid}
+        style={{ pointerEvents: 'none', color: 'white' }}
+      >
+        <span>
+          <FormattedMessage id={`debugger.${debugging ? 'stopDebugging' : 'startDebugging'}`} />
+        </span>
+      </button>
+    </div>
+  )
   return (
-    <div className='container px-0'>
-      <div className='txContainer'>
-        <div className='py-1 d-flex justify-content-center w-100 input-group'>
+    <div className="pb-2 container px-0">
+      <div className="txContainer">
+        <div className="py-1 d-flex justify-content-center w-100 input-group">
           <input
             ref={inputValue}
             value={state.txNumber}
-            className='form-control m-0 txinput'
-            id='txinput'
-            type='text'
+            className="form-control m-0 txinput"
+            id="txinput"
+            type="text"
             onChange={({ target: { value } }) => txInputChanged(value)}
             onInput={txInputOnInput}
-            placeholder={'Transaction hash, should start with 0x'}
-            data-id='debuggerTransactionInput'
+            placeholder={intl.formatMessage({ id: 'debugger.placeholder' })}
+            data-id="debuggerTransactionInput"
             disabled={debugging}
           />
         </div>
-        <div className='d-flex justify-content-center w-100 btn-group py-1'>
-          <button
-            className='btn btn-primary btn-sm txbutton'
-            id='load'
-            title={debugging ? 'Stop debugging' : 'Start debugging'}
-            onClick={handleSubmit}
-            data-id='debuggerTransactionStartButton'
-            disabled={!state.txNumber }
+        <div className="d-flex justify-content-center w-100 btn-group py-1">
+          <CustomTooltip
+            placement="bottom"
+            tooltipText={<FormattedMessage id={`debugger.${!state.isTxNumberValid ? 'provideTxNumber' : debugging ? 'stopDebugging' : 'startDebugging'}`} />}
+            tooltipId={'debuggingButtontooltip'}
+            tooltipClasses="text-nowrap"
           >
-            { debugging ? 'Stop' : 'Start' } debugging
-          </button>
+            {customJSX}
+          </CustomTooltip>
         </div>
       </div>
-      <span id='error' />
+      <span id="error" />
     </div>
   )
 }

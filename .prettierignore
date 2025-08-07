@@ -1,4 +1,13 @@
-# Add files here to ignore them from prettier formatting
+**/.yarn/*
 
-/dist
-/coverage
+# Ignore node_modules
+./node_modules
+
+# Ignore e2e files
+./apps/remix-ide-e2e/*
+
+# Ignore build artefacts
+./dist
+
+# Ignore all json files
+**/*.json

@@ -6,7 +6,7 @@ import { default as StatRunner } from '../../src/solidity-analyzer'
 import solc from 'solc';
 import { CompilationResult, AnalysisReportObj, AnalysisReport } from '../../src/types'
 import { checksEffectsInteraction } from '../../src/solidity-analyzer/modules/'
-const {compilerInput  } = helpers.compiler
+const { compilerInput } = helpers.compiler
 const folder: string = 'solidity-v0.5'
 
 let compiler
@@ -31,10 +31,9 @@ test('staticAnalysisIssues.functionParameterPassingError', function (t) {
   const statRunner: StatRunner = new StatRunner()
 
   t.doesNotThrow(() => {
-    statRunner.runWithModuleList(res, [{ name: new Module().name, mod: new Module() }], (reports: AnalysisReport[]) => {})
+    statRunner.runWithModuleList(res, [{ name: new Module().name, mod: new Module() }])
   }, 'Analysis should not throw')
 
-  statRunner.runWithModuleList(res, [{ name: new Module().name, mod: new Module() }], (reports: AnalysisReport[]) => {
-    t.ok(!reports.some((mod: AnalysisReport) => mod.report.some((rep: AnalysisReportObj) => rep.warning.includes('INTERNAL ERROR')), 'Should not have internal errors'))
-  })
+  const reports = statRunner.runWithModuleList(res, [{ name: new Module().name, mod: new Module() }])
+  t.ok(!reports.some((mod: AnalysisReport) => mod.report.some((rep: AnalysisReportObj) => rep.warning.includes('INTERNAL ERROR')), 'Should not have internal errors'))
 })

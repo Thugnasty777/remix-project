@@ -41,13 +41,17 @@ function isSubDirectory (parent: string, child: string) {
 function relativePath (path: string, sharedFolder: string): string {
   const relative: string = pathModule.relative(sharedFolder, path)
 
-  return normalizePath(relative)
+  return convertPathToPosix(normalizePath(relative))
 }
 
-function normalizePath (path: string): string {
+const convertPathToPosix = (pathName: string): string => {
+  return pathName.split(pathModule.sep).join(pathModule.posix.sep)
+}
+
+function normalizePath (path) {
   if (path === '/') path = './'
   if (process.platform === 'win32') {
-    return path.replace(/\\/g, '/')
+    return path.replace(/\//g, '\\')
   }
   return path
 }
@@ -114,4 +118,4 @@ function getDomain (url: string) {
   return domainMatch ? domainMatch[0] : null
 }
 
-export { absolutePath, relativePath, walkSync, resolveDirectory, getDomain }
+export { absolutePath, relativePath, walkSync, resolveDirectory, getDomain, normalizePath }

@@ -1,36 +1,36 @@
-import React, { useState, useEffect } from 'react' // eslint-disable-line
-import { ContractSelectionProps } from './types'
-import { PublishToStorage } from '@remix-ui/publish-to-storage' // eslint-disable-line
-import { TreeView, TreeViewItem } from '@remix-ui/tree-view' // eslint-disable-line
-import { CopyToClipboard } from '@remix-ui/clipboard' // eslint-disable-line
+import React, {useState, useEffect} from 'react' // eslint-disable-line
+import { FormattedMessage, useIntl } from 'react-intl'
+import { ContractPropertyName, ContractSelectionProps } from './types'
+import {PublishToStorage} from '@remix-ui/publish-to-storage' // eslint-disable-line
+import {TreeView, TreeViewItem} from '@remix-ui/tree-view' // eslint-disable-line
+import {CopyToClipboard} from '@remix-ui/clipboard' // eslint-disable-line
+import { saveAs } from 'file-saver'
+import { AppModal } from '@remix-ui/app'
 
 import './css/style.css'
+import { CustomTooltip, handleSolidityScan } from '@remix-ui/helper'
+
+const _paq = (window._paq = window._paq || [])
 
 export const ContractSelection = (props: ContractSelectionProps) => {
-  const { api, contractMap, contractsDetails, modal } = props
-  const [contractList, setContractList] = useState([])
+  const { api, compiledFileName, contractsDetails, contractList, compilerInput, modal } = props
   const [selectedContract, setSelectedContract] = useState('')
   const [storage, setStorage] = useState(null)
 
-  useEffect(() => {
-    const contractList = contractMap ? Object.keys(contractMap).map((key) => ({
-      name: key,
-      file: getFileName(contractMap[key].file)
-    })) : []
+  const intl = useIntl()
 
-    setContractList(contractList)
-    if (contractList.length) setSelectedContract(contractList[0].name)
-  }, [contractMap, contractsDetails])
+  useEffect(() => {
+    if (contractList.length) {
+      const compiledPathArr = compiledFileName.split('/')
+      const compiledFile = compiledPathArr[compiledPathArr.length - 1]
+      const contractsInCompiledFile = contractList.filter((obj) => obj.file === compiledFile)
+      if (contractsInCompiledFile.length) setSelectedContract(contractsInCompiledFile[0].name)
+      else setSelectedContract(contractList[0].name)
+    }
+  }, [contractList])
 
   const resetStorage = () => {
     setStorage('')
-  }
-
-  // Return the file name of a path: ex "browser/ballot.sol" -> "ballot.sol"
-  const getFileName = (path) => {
-    const part = path.split('/')
-
-    return part[part.length - 1]
   }
 
   const handleContractChange = (contractName: string) => {
@@ -74,24 +74,34 @@ export const ContractSelection = (props: ContractSelectionProps) => {
 
     if (children && children.length > 0) {
       return (
-        <TreeViewItem id={`treeViewItem${key}`} key={keyPath} label={
-          <div className="d-flex mt-2 flex-row remixui_label_item">
-            <label className="small font-weight-bold pr-1 remixui_label_key">{ key }:</label>
-            <label className="m-0 remixui_label_value">{ typeof data.self === 'boolean' ? `${data.self}` : data.self }</label>
-          </div>
-        }>
+        <TreeViewItem
+          id={`treeViewItem${key}`}
+          key={keyPath}
+          label={
+            <div className="d-flex mt-2 flex-row remixui_label_item">
+              <label className="font-weight-bold pr-1 remixui_label_key">{key}:</label>
+              <label className="m-0 remixui_label_value">{typeof data.self === 'boolean' ? `${data.self}` : data.self}</label>
+            </div>
+          }
+        >
           <TreeView id={`treeView${key}`} key={keyPath}>
             {children}
           </TreeView>
         </TreeViewItem>
       )
     } else {
-      return <TreeViewItem id={key.toString()} key={keyPath} label={
-        <div className="d-flex mt-2 flex-row remixui_label_item">
-          <label className="small font-weight-bold pr-1 remixui_label_key">{ key }:</label>
-          <label className="m-0 remixui_label_value">{ typeof data.self === 'boolean' ? `${data.self}` : data.self }</label>
-        </div>
-      } />
+      return (
+        <TreeViewItem
+          id={key.toString()}
+          key={keyPath}
+          label={
+            <div className="d-flex mt-2 flex-row remixui_label_item">
+              <label className="font-weight-bold pr-1 remixui_label_key">{key}:</label>
+              <label className="m-0 remixui_label_value">{typeof data.self === 'boolean' ? `${data.self}` : data.self}</label>
+            </div>
+          }
+        />
+      )
     }
   }
 
@@ -102,7 +112,10 @@ export const ContractSelection = (props: ContractSelectionProps) => {
       ret.children = item.map((item, index) => ({ key: index, value: item }))
       ret.self = ''
     } else if (item instanceof Object) {
-      ret.children = Object.keys(item).map((key) => ({ key: key, value: item[key] }))
+      ret.children = Object.keys(item).map((key) => ({
+        key: key,
+        value: item[key]
+      }))
       ret.self = ''
     } else {
       ret.self = item
@@ -111,28 +124,30 @@ export const ContractSelection = (props: ContractSelectionProps) => {
     return ret
   }
 
-  const insertValue = (details, propertyName) => {
+  const insertValue = (details, propertyName: ContractPropertyName) => {
     let node
     if (propertyName === 'web3Deploy' || propertyName === 'name' || propertyName === 'Assembly') {
-      node = <pre>{ details[propertyName] }</pre>
-    } else if (propertyName === 'abi' || propertyName === 'metadata') {
+      node = <pre>{details[propertyName]}</pre>
+    } else if (details[propertyName] && (propertyName === 'abi' || propertyName === 'metadata' || propertyName === 'compilerInput')) {
       if (details[propertyName] !== '') {
         try {
-          node = <div>
-            { (typeof details[propertyName] === 'object')
-              ? <TreeView id="treeView">
-                {
-                  Object.keys(details[propertyName]).map((innerkey) => renderData(details[propertyName][innerkey], innerkey, innerkey))
-                }
-              </TreeView> : <TreeView id="treeView">
-                {
-                  Object.keys(JSON.parse(details[propertyName])).map((innerkey) => renderData(JSON.parse(details[propertyName])[innerkey], innerkey, innerkey))
-                }
-              </TreeView>
-            }
-          </div> // catch in case the parsing fails.
+          node = (
+            <div>
+              {typeof details[propertyName] === 'object' ? (
+                <TreeView id="treeView">{Object.keys(details[propertyName]).map((innerkey) => renderData(details[propertyName][innerkey], innerkey, innerkey))}</TreeView>
+              ) : (
+                <TreeView id="treeView">
+                  {Object.keys(JSON.parse(details[propertyName])).map((innerkey) => renderData(JSON.parse(details[propertyName])[innerkey], innerkey, innerkey))}
+                </TreeView>
+              )}
+            </div>
+          ) // catch in case the parsing fails.
         } catch (e) {
-          node = <div>Unable to display "${propertyName}": ${e.message}</div>
+          node = (
+            <div>
+              <FormattedMessage id="solidity.unableToDisplay" /> "${propertyName}": ${e.message}
+            </div>
+          )
         }
       } else {
         node = <div> - </div>
@@ -143,85 +158,279 @@ export const ContractSelection = (props: ContractSelectionProps) => {
     return <pre className="remixui_value">{node || ''}</pre>
   }
 
+  const payload = {
+    saveAs: saveAs,
+    contractProperties: {},
+    selectedContract: '',
+    help: {},
+    insertValue: insertValue
+  }
+
   const details = () => {
+    _paq.push(['trackEvent', 'compiler', 'compilerDetails', 'display'])
     if (!selectedContract) throw new Error('No contract compiled yet')
 
     const help = {
-      Assembly: 'Assembly opcodes describing the contract including corresponding solidity source code',
-      Opcodes: 'Assembly opcodes describing the contract',
+      'Assembly': 'Assembly opcodes describing the contract including corresponding solidity source code',
+      'Opcodes': 'Assembly opcodes describing the contract',
       'Runtime Bytecode': 'Bytecode storing the state and being executed during normal contract call',
-      bytecode: 'Bytecode being executed during contract creation',
-      functionHashes: 'List of declared function and their corresponding hash',
-      gasEstimates: 'Gas estimation for each function call',
-      metadata: 'Contains all informations related to the compilation',
-      metadataHash: 'Hash representing all metadata information',
-      abi: 'ABI: describing all the functions (input/output params, scope, ...)',
-      name: 'Name of the compiled contract',
-      swarmLocation: 'Swarm url where all metadata information can be found (contract needs to be published first)',
-      web3Deploy: 'Copy/paste this code to any JavaScript/Web3 console to deploy this contract'
+      'bytecode': 'Bytecode being executed during contract creation',
+      'compilerInput': 'Input to the Solidity compiler',
+      'functionHashes': 'List of declared function and their corresponding hash',
+      'gasEstimates': 'Gas estimation for each function call',
+      'metadata': 'Contains all information related to the compilation',
+      'metadataHash': 'Hash representing all metadata information',
+      'abi': 'ABI: describing all the functions (input/output params, scope, ...)',
+      'name': 'Name of the compiled contract',
+      'swarmLocation': 'Swarm url where all metadata information can be found (contract needs to be published first)',
+      'storageLayout': 'See the Storage Layout documentation.',
+      'devdoc': 'Developer documentation (natspec)',
+      'userdoc': 'User documentation (natspec)',
+      'web3Deploy': 'Copy/paste this code to any JavaScript/Web3 console to deploy this contract'
     }
-    const contractProperties = contractsDetails[selectedContract] || {}
-    const log = <div className="remixui_detailsJSON">
-      <TreeView>
-        {
-          Object.keys(contractProperties).map((propertyName, index) => {
-            const copyDetails = <span className="remixui_copyDetails"><CopyToClipboard content={contractProperties[propertyName]} direction='top' /></span>
-            const questionMark = <span className="remixui_questionMark"><i title={ help[propertyName] } className="fas fa-question-circle" aria-hidden="true"></i></span>
+    let contractProperties: any = {}
+    // Make 'compilerInput' first field to display it as first item in 'Compilation Details' modal
+    if (compilerInput) contractProperties.compilerInput = compilerInput
+    contractProperties = Object.assign(contractProperties, contractsDetails[selectedContract])
+    payload.contractProperties = contractProperties
+    payload.selectedContract = selectedContract
+    payload.help = help
+    payload.insertValue = insertValue
+    const log = (
+      <div className="remixui_detailsJSON">
+        <TreeView>
+          {Object.keys(contractProperties).map((propertyName: ContractPropertyName, index) => {
+            const copyDetails = (
+              <span className="remixui_copyDetails">
+                <CopyToClipboard tip={intl.formatMessage({ id: 'solidity.copy' })} content={contractProperties[propertyName]} direction="top" />
+              </span>
+            )
+            const questionMark = (
+              <span className="remixui_questionMark">
+                <i
+                  title={intl.formatMessage({
+                    id: `solidity.${propertyName}`,
+                    defaultMessage: help[propertyName]
+                  })}
+                  className="fas fa-question-circle"
+                  aria-hidden="true"
+                ></i>
+              </span>
+            )
 
             return (
               <div className="remixui_log" key={index}>
                 <TreeViewItem
                   label={
-                    <div data-id={`remixui_treeviewitem_${propertyName}`} className="remixui_key">{ propertyName } { copyDetails } { questionMark }</div>
-                  }>
-                  { insertValue(contractProperties, propertyName) }
+                    <div data-id={`remixui_treeviewitem_${propertyName}`} className="remixui_key">
+                      {propertyName} {copyDetails} {questionMark}
+                    </div>
+                  }
+                >
+                  {insertValue(contractProperties, propertyName)}
                 </TreeViewItem>
               </div>
             )
-          })
-        }
-      </TreeView>
-    </div>
-
-    modal(selectedContract, log, 'Close', null)
+          })}
+        </TreeView>
+      </div>
+    )
+    const downloadFn = () => {
+      _paq.push(['trackEvent', 'compiler', 'compilerDetails', 'download'])
+      saveAs(new Blob([JSON.stringify(contractProperties, null, '\t')]), `${selectedContract}_compData.json`)
+    }
+    // modal(selectedContract, log, intl.formatMessage({id: 'solidity.download'}), downloadFn, true, intl.formatMessage({id: 'solidity.close'}), null)
   }
 
   const copyBytecode = () => {
-    return copyContractProperty('bytecode')
+    const bytecodeObj = JSON.parse(copyContractProperty('bytecode'))
+    return bytecodeObj.object
+  }
+
+  const runStaticAnalysis = async () => {
+    _paq.push(['trackEvent', 'solidityCompiler', 'runStaticAnalysis', 'initiate'])
+    const plugin = api as any
+    const isStaticAnalyzersActive = await plugin.call('manager', 'isActive', 'solidityStaticAnalysis')
+    if (!isStaticAnalyzersActive) {
+      await plugin.call('manager', 'activatePlugin', 'solidityStaticAnalysis')
+    }
+    plugin.call('menuicons', 'select', 'solidityStaticAnalysis')
+  }
+
+  const handleScanContinue = async () => {
+    await handleSolidityScan(api, props.compiledFileName)
+  }
+
+  const runSolidityScan = async () => {
+    _paq.push(['trackEvent', 'solidityCompiler', 'solidityScan', 'askPermissionToScan'])
+    const modal: AppModal = {
+      id: 'SolidityScanPermissionHandler',
+      title: <FormattedMessage id="solidity.solScan.modalTitle" />,
+      message: <div className='d-flex flex-column'>
+        <span><FormattedMessage id="solidity.solScan.modalMessage" />
+          <a href={'https://solidityscan.com/?utm_campaign=remix&utm_source=remix'}
+            target="_blank"
+            onClick={() => _paq.push(['trackEvent', 'solidityCompiler', 'solidityScan', 'learnMore'])}>
+              Learn more
+          </a>
+        </span>
+        <br/>
+        <FormattedMessage id="solidity.solScan.likeToContinue" />
+      </div>,
+      okLabel: <FormattedMessage id="solidity.solScan.modalOkLabel" />,
+      okFn: handleScanContinue,
+      cancelLabel: <FormattedMessage id="solidity.solScan.modalCancelLabel" />,
+      cancelFn:() => { _paq.push(['trackEvent', 'solidityCompiler', 'solidityScan', 'cancelClicked'])}
+    }
+    await (api as any).call('notification', 'modal', modal)
   }
 
   return (
     // define swarm logo
     <>
-      { contractList.length
-        ? <section className="remixui_compilerSection pt-3">
+      {contractList.length ? (
+        <section className="px-4 pt-3">
           {/* Select Compiler Version */}
           <div className="mb-3">
-            <label className="remixui_compilerLabel form-check-label" htmlFor="compiledContracts">Contract</label>
+            <label className="remixui_compilerLabel form-check-label" htmlFor="compiledContracts">
+              <FormattedMessage id="solidity.contract" />
+            </label>
             <select onChange={(e) => handleContractChange(e.target.value)} value={selectedContract} data-id="compiledContracts" id="compiledContracts" className="custom-select">
-              { contractList.map(({ name, file }, index) => <option value={name} key={index}>{name} ({file})</option>)}
+              {contractList.map(({ name, file }, index) => (
+                <option value={name} key={index}>
+                  {name} ({file})
+                </option>
+              ))}
             </select>
           </div>
           <article className="mt-2 pb-0">
-            <button id="publishOnIpfs" className="btn btn-secondary btn-block" title="Publish on Ipfs" onClick={() => { handlePublishToStorage('ipfs') }}>
-              <span>Publish on Ipfs</span>
-              <img id="ipfsLogo" className="remixui_storageLogo ml-2" src="assets/img/ipfs.webp" />
-            </button>
-            <button data-id="compilation-details" className="btn btn-secondary btn-block" title="Display Contract Details" onClick={() => { details() }}>
-              Compilation Details
-            </button>
+            <CustomTooltip
+              placement={'auto-end'}
+              tooltipId="runStaticAnalysisTooltip"
+              tooltipClasses="text-nowrap"
+              tooltipText={`${intl.formatMessage({
+                id: 'solidity.runStaticAnalysis.iconTooltip'
+              })}`}
+            >
+              <button
+                id="runStaticAnalysis"
+                className="btn border btn-block"
+                onClick={() => {
+                  runStaticAnalysis()
+                }}
+              >
+                <span>
+                  <img id="ssaLogo" className="remixui_storageLogo mr-2" src="assets/img/staticAnalysisColorBlue.webp" />
+                  <span>
+                    <FormattedMessage id="solidity.runStaticAnalysis" />
+                  </span>
+                </span>
+              </button>
+            </CustomTooltip>
+            <CustomTooltip
+              placement={'auto-end'}
+              tooltipId="runSolidityScanTooltip"
+              tooltipClasses="text-nowrap"
+              tooltipText={`${intl.formatMessage({
+                id: 'solidity.solScan.iconTooltip'
+              })}`}
+            >
+              <button
+                id="runSolidityScan"
+                className="btn border btn-block"
+                onClick={() => {
+                  runSolidityScan()
+                }}
+              >
+                <span>
+                  <img id="solscanLogo" className="remixui_storageLogo mr-2" src="assets/img/solidityScanLogo.webp" />
+                  <span>
+                    <FormattedMessage id="solidity.runSolidityScan" />
+                  </span>
+                </span>
+              </button>
+            </CustomTooltip>
+            <CustomTooltip
+              placement={'auto-end'}
+              tooltipId="publishOnIpfsTooltip"
+              tooltipClasses="text-nowrap"
+              tooltipText={`${intl.formatMessage({
+                id: 'solidity.publishOn'
+              })} Ipfs`}
+            >
+              <button
+                id="publishOnIpfs"
+                className="btn border btn-block"
+                onClick={() => {
+                  handlePublishToStorage('ipfs')
+                }}
+              >
+
+                <span>
+                  <img id="ipfsLogo" className="remixui_storageLogo mr-2" src="assets/img/ipfs.webp" />
+                  <span>
+                    <FormattedMessage id="solidity.publishOn" /> IPFS
+                  </span>
+                </span>
+              </button>
+            </CustomTooltip>
+            <CustomTooltip
+              placement={'auto-end'}
+              tooltipId="publishOnSwarmTooltip"
+              tooltipClasses="text-nowrap"
+              tooltipText={`${intl.formatMessage({
+                id: 'solidity.publishOn'
+              })} Swarm`}
+            >
+              <button
+                id="publishOnSwarm"
+                className="btn border btn-block"
+                onClick={() => {
+                  handlePublishToStorage('swarm')
+                }}
+              >
+                <span>
+                  <img id="swarmLogo" className="remixui_storageLogo mr-2" src="assets/img/swarmColor.webp" />
+                  <span>
+                    <FormattedMessage id="solidity.publishOn" /> Swarm
+                  </span>
+                </span>
+              </button>
+            </CustomTooltip>
+            <CustomTooltip
+              placement={'auto-end'}
+              tooltipId="CompilationDetailsTooltip"
+              tooltipClasses="text-nowrap"
+              tooltipText={<FormattedMessage id="solidity.displayContractDetails" />}
+            >
+              <button
+                data-id="compilation-details"
+                className="btn border btn-block"
+                onClick={async () => {
+                  details()
+                  await (api as any).call('compilationDetails', 'showDetails', payload)
+                }}
+              >
+                <span>
+                  <i className="fa-regular fa-memo-pad mr-2 text-primary"></i>
+                  <span>
+                    <FormattedMessage id="solidity.compilationDetails" />
+                  </span>
+                </span>
+              </button>
+            </CustomTooltip>
             {/* Copy to Clipboard */}
             <div className="remixui_contractHelperButtons">
               <div className="input-group">
                 <div className="btn-group" role="group" aria-label="Copy to Clipboard">
-                  <CopyToClipboard title="Copy ABI to clipboard" content={copyABI()} direction='top'>
-                    <button className="btn remixui_copyButton" title="Copy ABI to clipboard">
+                  <CopyToClipboard tip={intl.formatMessage({ id: 'solidity.copyABI' })} getContent={copyABI} direction="top">
+                    <button className="btn remixui_copyButton">
                       <i className="remixui_copyIcon far fa-copy" aria-hidden="true"></i>
                       <span>ABI</span>
                     </button>
                   </CopyToClipboard>
-                  <CopyToClipboard title="Copy ABI to clipboard" content={copyBytecode()} direction='top'>
-                    <button className="btn remixui_copyButton" title="Copy Bytecode to clipboard">
+                  <CopyToClipboard tip={intl.formatMessage({ id: 'solidity.copyBytecode' })} getContent={copyBytecode} direction="top">
+                    <button className="btn remixui_copyButton">
                       <i className="remixui_copyIcon far fa-copy" aria-hidden="true"></i>
                       <span>Bytecode</span>
                     </button>
@@ -230,10 +439,16 @@ export const ContractSelection = (props: ContractSelectionProps) => {
               </div>
             </div>
           </article>
-        </section> : <section className="remixui_container clearfix"><article className="px-2 mt-2 pb-0 d-flex w-100">
-          <span className="mt-2 mx-3 w-100 alert alert-warning" role="alert">No Contract Compiled Yet</span>
-        </article></section>
-      }
+        </section>
+      ) : (
+        <section className="m-0 clearfix">
+          <article className="px-2 mt-2 pb-0 d-flex w-100">
+            <span className="mt-2 mx-3 w-100 alert alert-warning" role="alert">
+              <FormattedMessage id="solidity.noContractCompiled" />
+            </span>
+          </article>
+        </section>
+      )}
       <PublishToStorage api={api} storage={storage} contract={contractsDetails[selectedContract]} resetStorage={resetStorage} />
     </>
   )

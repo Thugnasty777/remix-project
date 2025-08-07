@@ -1,19 +1,34 @@
 'use strict'
 
 const EventManager = require('events')
-const FileProvider = require('./fileProvider')
-const pathModule = require('path')
+import FileProvider from "./fileProvider"
 
-class WorkspaceFileProvider extends FileProvider {
+export default class WorkspaceFileProvider extends FileProvider {
   constructor () {
     super('')
     this.workspacesPath = '.workspaces'
     this.workspace = null
     this.event = new EventManager()
+
+    try {
+      // make sure "code-sample" has been removed
+      window.remixFileSystem.exists(this.workspacesPath + '/code-sample').then((exist) => {
+        if (exist) window.remixFileSystem.unlink(this.workspacesPath + '/code-sample').catch((e) => {
+          console.log(e)
+        })
+      }).catch((e) => {
+        console.log(e)
+      })
+    } catch (e) {
+      // we don't need to log error if this throws an error
+    }
   }
 
   setWorkspace (workspace) {
-    workspace = workspace.replace(/^\/|\/$/g, '') // remove first and last slash
+    const workspaceName = (workspace || {}).name ? workspace.name : workspace
+  
+    if (!workspaceName) return
+    workspace = workspaceName.replace(/^\/|\/$/g, '') // remove first and last slash
     this.workspace = workspace
   }
 
@@ -30,10 +45,10 @@ class WorkspaceFileProvider extends FileProvider {
   }
 
   removePrefix (path) {
-    if (!this.workspace) this.createWorkspace()
+    if (!path) path = '/'
     path = path.replace(/^\/|\/$/g, '') // remove first and last slash
+    path = path.replace(/^\.\/+/, '') // remove ./ from start of string
     if (path.startsWith(this.workspacesPath + '/' + this.workspace)) return path
-    if (path.startsWith(this.workspace)) return path.replace(this.workspace, this.workspacesPath + '/' + this.workspace)
     path = super.removePrefix(path)
     let ret = this.workspacesPath + '/' + this.workspace + '/' + (path === '/' ? '' : path)
 
@@ -42,16 +57,7 @@ class WorkspaceFileProvider extends FileProvider {
     return ret
   }
 
-  isSubDirectory (parent, child) {
-    if (!parent) return false
-    if (parent === child) return true
-    const relative = pathModule.relative(parent, child)
-
-    return !!relative && relative.split(pathModule.sep)[0] !== '..'
-  }
-
   resolveDirectory (path, callback) {
-    if (!this.workspace) this.createWorkspace()
     super.resolveDirectory(path, (error, files) => {
       if (error) return callback(error)
       const unscoped = {}
@@ -63,8 +69,8 @@ class WorkspaceFileProvider extends FileProvider {
   }
 
   async copyFolderToJson (directory, visitFile, visitFolder) {
-    visitFile = visitFile || (() => {})
-    visitFolder = visitFolder || (() => {})
+    visitFile = visitFile || function () { /* do nothing. */ }
+    visitFolder = visitFolder || function () { /* do nothing. */ }
     const regex = new RegExp(`.workspaces/${this.workspace}/`, 'g')
     let json = await super._copyFolderToJsonInternal(directory, ({ path, content }) => {
       visitFile({ path: path.replace(regex, ''), content })
@@ -76,13 +82,20 @@ class WorkspaceFileProvider extends FileProvider {
   }
 
   _normalizePath (path) {
-    if (!this.workspace) this.createWorkspace()
     return path.replace(this.workspacesPath + '/' + this.workspace + '/', '')
   }
 
-  createWorkspace (name) {
-    if (!name) name = 'default_workspace'
-    this.event.emit('createWorkspace', name)
+  async createWorkspace (name) {
+    try {
+      if (!name) name = 'default_workspace'
+      const path = this.workspacesPath + '/' + name
+
+      await super.forceCreateDir(path)
+      this.setWorkspace(name)
+      this.event.emit('createWorkspace', name)
+    } catch (e) {
+      throw new Error(e)
+    }
   }
 }
 

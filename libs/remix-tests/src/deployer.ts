@@ -1,6 +1,6 @@
 import async from 'async'
 import { execution } from '@remix-project/remix-lib'
-import Web3 from 'web3'
+import { Web3, FMT_BYTES, FMT_NUMBER } from 'web3'
 import { compilationInterface } from './types'
 
 /**
@@ -11,18 +11,12 @@ import { compilationInterface } from './types'
  * @param callback Callback
  */
 
-export function deployAll (compileResult: compilationInterface, web3: Web3, withDoubleGas: boolean, callback) {
+export function deployAll (compileResult: compilationInterface, web3: Web3, testsAccounts, withDoubleGas: boolean, deployCb, callback) {
   const compiledObject = {}
   const contracts = {}
-  let accounts: string[] = []
+  const accounts: string[] = testsAccounts
 
   async.waterfall([
-    function getAccountList (next) {
-      web3.eth.getAccounts((_err, _accounts) => {
-        accounts = _accounts
-        next()
-      })
-    },
     function getContractData (next) {
       for (const contractFile in compileResult) {
         for (const contractName in compileResult[contractFile]) {
@@ -64,13 +58,13 @@ export function deployAll (compileResult: compilationInterface, web3: Web3, with
     },
     function deployContracts (contractsToDeploy: string[], next) {
       const deployRunner = (deployObject, contractObject, contractName, filename, callback) => {
-        deployObject.estimateGas().then((gasValue) => {
+        deployObject.estimateGas(undefined, { number: FMT_NUMBER.NUMBER, bytes: FMT_BYTES.HEX }).then((gasValue) => {
           const gasBase = Math.ceil(gasValue * 1.2)
           const gas = withDoubleGas ? gasBase * 2 : gasBase
           deployObject.send({
             from: accounts[0],
             gas: gas
-          }).on('receipt', function (receipt) {
+          }).on('receipt', async function (receipt) {
             contractObject.options.address = receipt.contractAddress
             contractObject.options.from = accounts[0]
             contractObject.options.gas = 5000 * 1000
@@ -79,11 +73,15 @@ export function deployAll (compileResult: compilationInterface, web3: Web3, with
             contracts[contractName] = contractObject
             contracts[contractName].filename = filename
 
+            if (deployCb) await deployCb(filename, receipt.contractAddress)
             callback(null, { receipt: { contractAddress: receipt.contractAddress } }) // TODO this will only work with JavaScriptV VM
           }).on('error', function (err) {
             console.error(err)
             callback(err)
           })
+        }).catch((err) => {
+          console.error(err)
+          callback(err)
         })
       }
 

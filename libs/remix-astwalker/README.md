@@ -10,7 +10,7 @@
 ### Installation
 `@remix-project/remix-astwalker` is an NPM package and can be installed using NPM as:
 
-`npm install @remix-project/remix-astwalker`
+`yarn add @remix-project/remix-astwalker`
 
 ### How to use
 
@@ -35,7 +35,7 @@ astWalker.on("node", node => {
 
 Please feel free to open an issue or a pull request. 
 
-In case you want to add some code, do have a look to our contribution guidelnes [here](https://github.com/ethereum/remix-project/blob/master/CONTRIBUTING.md). Reach us on [Gitter](https://gitter.im/ethereum/remix) in case of any queries.
+In case you want to add some code, do have a look at our contribution guidelines [here](https://github.com/ethereum/remix-project/blob/master/CONTRIBUTING.md). Reach us on [Gitter](https://gitter.im/ethereum/remix) in case of any queries.
 
 ### License
 MIT © 2018-21 Remix Team

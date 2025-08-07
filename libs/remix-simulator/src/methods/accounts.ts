@@ -1,16 +1,24 @@
-import { BN, privateToAddress, toChecksumAddress, isValidPrivate, Address } from 'ethereumjs-util'
-import Web3 from 'web3'
+import { signTypedData, SignTypedDataVersion, TypedMessage, MessageTypes } from '@metamask/eth-sig-util'
+import { privateToAddress, toChecksumAddress, isValidPrivate, createAddressFromString, toBytes, bytesToHex, Account } from '@ethereumjs/util'
+import type { PrefixedHexString } from '@ethereumjs/util'
+import { privateKeyToAccount } from 'web3-eth-accounts'
+import { toBigInt, toHex } from 'web3-utils'
 import * as crypto from 'crypto'
 
-export class Accounts {
-  web3
-  accounts: Record<string, unknown>
-  accountsKeys: Record<string, unknown>
-  vmContext
+type AccountType = {
+  nonce: number,
+  privateKey: Uint8Array
+}
 
-  constructor (vmContext) {
-    this.web3 = new Web3()
+export class Web3Accounts {
+  accounts: Record<string, AccountType>
+  accountsKeys: Record<string, string>
+  vmContext
+  options
+
+  constructor (vmContext, options) {
     this.vmContext = vmContext
+    this.options = options
     // TODO: make it random and/or use remix-libs
 
     this.accounts = {}
@@ -37,26 +45,27 @@ export class Accounts {
     await this._addAccount('71975fbf7fe448e004ac7ae54cad0a383c3906055a65468714156a07385e96ce', '0x56BC75E2D63100000')
   }
 
-  _addAccount (privateKey, balance) {
-    return new Promise((resolve, reject) => {
-      privateKey = Buffer.from(privateKey, 'hex')
-      const address: Buffer = privateToAddress(privateKey)
-      const addressStr = toChecksumAddress('0x' + address.toString('hex'))
+  async _addAccount (privateKey, balance) {
+    try {
+      if (typeof privateKey === 'string') privateKey = toBytes(('0x' + privateKey) as PrefixedHexString)
+      const address: Uint8Array = privateToAddress(privateKey)
+      const addressStr = toChecksumAddress(bytesToHex(address))
       this.accounts[addressStr] = { privateKey, nonce: 0 }
-      this.accountsKeys[addressStr] = '0x' + privateKey.toString('hex')
+      this.accountsKeys[addressStr] = bytesToHex(privateKey)
 
       const stateManager = this.vmContext.vm().stateManager
-      stateManager.getAccount(Address.fromString(addressStr)).then((account) => {
-        account.balance = new BN(balance.replace('0x', '') || 'f00000000000000001', 16)
-        stateManager.putAccount(Address.fromString(addressStr), account).catch((error) => {
-          reject(error)
-        }).then(() => {
-          resolve({})
-        })
-      }).catch((error) => {
-        reject(error)
-      })
-    })
+      const account = await stateManager.getAccount(createAddressFromString(addressStr))
+      if (!account) {
+        const account = new Account(BigInt(0), toBigInt(balance || '0xf00000000000000001'))
+        await stateManager.putAccount(createAddressFromString(addressStr), account)
+      } else {
+        account.balance = toBigInt(balance || '0xf00000000000000001')
+        await stateManager.putAccount(createAddressFromString(addressStr), account)
+      }
+    } catch (e) {
+      console.error(e)
+    }
+
   }
 
   newAccount (cb) {
@@ -65,15 +74,29 @@ export class Accounts {
       privateKey = crypto.randomBytes(32)
     } while (!isValidPrivate(privateKey))
     this._addAccount(privateKey, '0x56BC75E2D63100000')
-    return cb(null, '0x' + privateToAddress(privateKey).toString('hex'))
+    return cb(null, bytesToHex(privateToAddress(privateKey)))
   }
 
   methods (): Record<string, unknown> {
     return {
+      eth_requestAccounts: this.eth_requestAccounts.bind(this),
       eth_accounts: this.eth_accounts.bind(this),
       eth_getBalance: this.eth_getBalance.bind(this),
-      eth_sign: this.eth_sign.bind(this)
+      eth_sign: this.eth_sign.bind(this),
+      eth_chainId: this.eth_chainId.bind(this),
+      eth_signTypedData: this.eth_signTypedData_v4.bind(this), // default call is using V4
+      eth_signTypedData_v4: this.eth_signTypedData_v4.bind(this),
+      eth_getPKey: this.eth_getPKey.bind(this),
     }
+  }
+
+  eth_requestAccounts (_payload, cb) {
+    return cb(null, Object.keys(this.accounts))
+  }
+
+  eth_getPKey (payload, cb) {
+    const address = toChecksumAddress(payload.params[0])
+    cb(null, this.accounts[address].privateKey)
   }
 
   eth_accounts (_payload, cb) {
@@ -82,9 +105,10 @@ export class Accounts {
 
   eth_getBalance (payload, cb) {
     const address = payload.params[0]
-
-    this.vmContext.vm().stateManager.getAccount(Address.fromString(address)).then((account) => {
-      cb(null, new BN(account.balance).toString(10))
+    this.vmContext.vm().stateManager.getAccount(createAddressFromString(address)).then((account) => {
+      if (!account) return cb(null, toBigInt(0).toString(10))
+      if (!account.balance) return cb(null, toBigInt(0).toString(10))
+      cb(null, toBigInt(account.balance).toString(10))
     }).catch((error) => {
       cb(error)
     })
@@ -98,10 +122,61 @@ export class Accounts {
     if (!privateKey) {
       return cb(new Error('unknown account'))
     }
-    const account = this.web3.eth.accounts.privateKeyToAccount(privateKey)
+    const account = privateKeyToAccount(privateKey as string)
 
     const data = account.sign(message)
 
     cb(null, data.signature)
+  }
+
+  eth_chainId (_payload, cb) {
+    if (!this.options.chainId) return cb(null, '0x539') // 0x539 is hex of 1337
+    const id = (typeof this.options.chainId === 'number') ? toHex(this.options.chainId) : this.options.chainId
+    return cb(null, id)
+  }
+
+  eth_signTypedData_v4 (payload, cb) {
+    const address: string = payload.params[0]
+    const typedData: TypedMessage<MessageTypes> = payload.params[1]
+
+    try {
+      if (this.accounts[toChecksumAddress(address)] == null) {
+        throw new Error("cannot sign data; no private key");
+      }
+
+      if (typeof typedData === "string") {
+        throw new Error("cannot sign data; string sent, expected object");
+      }
+
+      if (!typedData.types) {
+        throw new Error("cannot sign data; types missing");
+      }
+
+      if (!typedData.types.EIP712Domain) {
+        throw new Error("cannot sign data; EIP712Domain definition missing");
+      }
+
+      if (!typedData.domain) {
+        throw new Error("cannot sign data; domain missing");
+      }
+
+      if (!typedData.primaryType) {
+        throw new Error("cannot sign data; primaryType missing");
+      }
+
+      if (!typedData.message) {
+        throw new Error("cannot sign data; message missing");
+      }
+
+      const ret = signTypedData({
+        privateKey: Buffer.from(this.accounts[toChecksumAddress(address)].privateKey),
+        data: typedData,
+        version: SignTypedDataVersion.V4
+      })
+
+      cb(null, ret)
+    } catch (e) {
+      cb(e.message)
+    }
   }
 }

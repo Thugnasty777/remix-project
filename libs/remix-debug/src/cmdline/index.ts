@@ -1,5 +1,5 @@
-import Web3 from 'web3'
-import { Debugger } from '../debugger/debugger.js'
+import { Web3 } from 'web3'
+import { Debugger } from '../debugger/debugger'
 import { EventEmitter } from 'events'
 
 export class CmdLine {
@@ -64,7 +64,7 @@ export class CmdLine {
     source.push('=>  ' + (currentLineNumber + 1) + ':  ' + currentLine)
 
     const startLine = lineColumnPos.start.line
-    for (var i = 1; i < 4; i++) {
+    for (let i = 1; i < 4; i++) {
       const line = content[startLine + i]
       source.push('    ' + (startLine + i + 1) + ':  ' + line)
     }
@@ -96,7 +96,7 @@ export class CmdLine {
         this.events.emit('globals', data)
       })
 
-      // TODO: this doesnt work too well, it should request the data instead...
+      // TODO: this doesn't work too well, it should request the data instead...
       this.debugger.vmDebuggerLogic.event.register('solidityLocals', (data) => {
         if (JSON.stringify(data) === '{}') return
         this.solidityLocals = data

@@ -1,5 +1,6 @@
 export { runTestFiles } from './runTestFiles'
-export { runTestSources } from './runTestSources'
+export { UnitTestRunner } from './runTestSources'
 export { runTest } from './testRunner'
 export * from './types'
-export const assertLibCode = require('../sol/tests.sol')
+export const assertLibCode = require('../sol/tests.sol') // eslint-disable-line
+export { writeTestAccountsContract } from './compiler'

@@ -1,9 +1,12 @@
 'use strict'
-import { BN, bufferToHex, keccak, setLengthLeft, toBuffer, addHexPrefix } from 'ethereumjs-util'
+import { hash } from '@remix-project/remix-lib'
+import { setLengthLeft, toBytes, addHexPrefix } from '@ethereumjs/util'
 import stringSimilarity from 'string-similarity'
+import { BN } from 'bn.js'
+import { isBigInt } from 'web3-validator'
 
 /*
- contains misc util: @TODO should be splitted
+ contains misc util: @TODO should be split
   - hex conversion
   - binary search
   - CALL related look up
@@ -35,21 +38,49 @@ export function hexToIntArray (hexString) {
 export function hexListFromBNs (bnList) {
   const ret = []
   for (const k in bnList) {
-    const v = bnList[k]
-    if (BN.isBN(v)) {
-      ret.push('0x' + v.toString('hex', 64))
-    } else {
-      ret.push('0x' + (new BN(v)).toString('hex', 64)) // TEMP FIX TO REMOVE ONCE https://github.com/ethereumjs/ethereumjs-vm/pull/293 is released
-    }
+    const v = bnList[k].toString(16)
+    ret.push('0x' + v.padStart(64, '0'))
   }
   return ret
+}
+
+export function toHexPaddedString(v: bigint | string): string {
+  if (v) {
+    if (typeof v === 'string') {
+      return v.startsWith('0x') ? v : '0x' + v
+    } else {
+      return '0x' + v.toString(16).padStart(64, '0')
+    }
+  }
+  else
+    return '0x' + '0'.padStart(64, '0')
+}
+
+const hexByByte = Array.from({ length: 256 }, (v, i) => i.toString(16).padStart(2, '0'))
+export function bytesToHex (bytes: Uint8Array): any {
+  let hex = `0x`
+  if (bytes === undefined || bytes.length === 0) return hex
+  for (const byte of bytes) {
+    hex = `${hex}${hexByByte[byte]}`
+  }
+  return hex
+}
+
+export function padHexToEven(hex: string): string {
+  hex = hex.replace('0x', '')
+  // Check if the length of the hex string is odd
+  if (hex.length % 2 !== 0) {
+    // Add a leading zero
+    hex = '0' + hex;
+  }
+  return '0x' + hex;
 }
 
 /*
   ints: ints: IntArray
 */
 export function formatMemory (mem) {
-  const hexMem = bufferToHex(mem).substr(2)
+  const hexMem = bytesToHex(mem).substr(2)
   const ret = []
   for (let k = 0; k < hexMem.length; k += 32) {
     const row = hexMem.substr(k, 32)
@@ -85,7 +116,7 @@ export function findLowerBound (target, array) {
   return largest array[i] such that array[i] <= target; return null if array[0] > target || array is empty
 */
 export function findLowerBoundValue (target, array) {
-  const index = this.findLowerBound(target, array)
+  const index = findLowerBound(target, array)
   return index >= 0 ? array[index] : null
 }
 
@@ -99,7 +130,7 @@ export function findClosestIndex (target, array): number {
   if (array.length === 0) {
     return -1
   }
-  const index = this.findLowerBound(target, array)
+  const index = findLowerBound(target, array)
   if (index < 0) {
     return 0
   } else if (index >= array.length - 1) {
@@ -143,9 +174,15 @@ export function buildCallPath (index, rootCall) {
   */
 // eslint-disable-next-line camelcase
 export function sha3_256 (value) {
-  value = toBuffer(addHexPrefix(value))
-  const retInBuffer: Buffer = keccak(setLengthLeft(value, 32))
-  return bufferToHex(retInBuffer)
+  if ((value.constructor && value.constructor.name === 'BigNumber') || BN.isBN(value) || isBigInt(value)) {
+    value = value.toString(16)
+  }
+  if (typeof value === 'number') {
+    value = value.toString(16)
+  }
+  value = toBytes(addHexPrefix(value))
+  const retInBuffer: Uint8Array = hash.keccak(Buffer.from(setLengthLeft(value, 32)))
+  return bytesToHex(retInBuffer)
 }
 
 /**
@@ -177,35 +214,61 @@ export function swarmHashExtractionPOC32 () {
 
 /**
   * return a regex which extract the cbor encoded metadata : {"ipfs": <IPFS hash>, "solc": <compiler version>} from the bytecode.
-  * ref https://solidity.readthedocs.io/en/v0.6.6/metadata.html?highlight=ipfs#encoding-of-the-metadata-hash-in-the-bytecode
+  * ref https://docs.soliditylang.org/en/v0.6.6/metadata.html?highlight=ipfs#encoding-of-the-metadata-hash-in-the-bytecode
   * @return {RegEx}
   */
 export function cborEncodedValueExtraction () {
   return /64697066735822([0-9a-f]{68})64736f6c6343([0-9a-f]{6})0033$/
 }
 
+/**
+  * return a regex which extract the input parameters from the bytecode
+  *
+  * @return {RegEx}
+  */
+export function inputParametersExtraction () {
+  return /64697066735822[0-9a-f]{68}64736f6c6343[0-9a-f]{6}0033(.*)$/
+}
+
 export function extractcborMetadata (value) {
-  return value.replace(this.cborEncodedValueExtraction(), '')
+  const cbor = value.match(cborEncodedValueExtraction())
+  if (cbor && cbor[0]) value = value.replace(cbor[0], '')
+  return value
 }
 
 export function extractSwarmHash (value) {
-  value = value.replace(this.swarmHashExtraction(), '')
-  value = value.replace(this.swarmHashExtractionPOC31(), '')
-  value = value.replace(this.swarmHashExtractionPOC32(), '')
+  value = value.replace(swarmHashExtraction(), '')
+  value = value.replace(swarmHashExtractionPOC31(), '')
+  value = value.replace(swarmHashExtractionPOC32(), '')
   return value
+}
+
+export function extractinputParameters (value) {
+  const inputsParam = getinputParameters(value)
+  if (inputsParam) value = value.replace(inputsParam, '')
+  return value
+}
+
+export function getinputParameters (value) {
+  const regex = value.match(inputParametersExtraction())
+  if (regex && regex[1]) {
+    return regex[1]
+  } else
+    return ''
 }
 
 /**
   * Compare bytecode. return true if the code is equal (handle swarm hash and library references)
   * @param {String} code1 - the bytecode that is actually deployed (contains resolved library reference and a potentially different swarmhash)
   * @param {String} code2 - the bytecode generated by the compiler (contains unresolved library reference and a potentially different swarmhash)
-                            this will return false if the generated bytecode is empty (asbtract contract cannot be deployed)
+                            this will return false if the generated bytecode is empty (abstract contract cannot be deployed)
   *
   * @return {bool}
   */
 export function compareByteCode (code1, code2) {
   if (code1 === code2) return true
   if (code2 === '0x') return false // abstract contract. see comment
+  if (code1 === '0x00' || code2 === '0x00' && code1 !== code2) return false // // This can be removed some time once YUL returns correct bytecode
 
   if (code2.substr(2, 46) === '7300000000000000000000000000000000000000003014') {
     // testing the following signature: PUSH20 00..00 ADDRESS EQ
@@ -218,14 +281,24 @@ export function compareByteCode (code1, code2) {
     code2 = replaceLibReference(code2, pos)
     code1 = replaceLibReference(code1, pos)
   }
-  code1 = this.extractSwarmHash(code1)
-  code1 = this.extractcborMetadata(code1)
-  code2 = this.extractSwarmHash(code2)
-  code2 = this.extractcborMetadata(code2)
+
+  code1 = removeImmutableReference(code1, code2)
+  code1 = extractinputParameters(code1)
+  code1 = extractSwarmHash(code1)
+  code1 = extractcborMetadata(code1)
+  code2 = extractinputParameters(code2)
+  code2 = extractSwarmHash(code2)
+  code2 = extractcborMetadata(code2)
 
   if (code1 && code2) {
+    if (code1.length !== code2.length) {
+      // if the length isn't the same, we have an issue with extracting the metadata hash.
+      const minLength = code1.length > code2.length ? code2.length: code1.length
+      code1 = code1.substr(0, minLength - 10)
+      code2 = code2.substr(0, minLength - 10)
+    }
     const compare = stringSimilarity.compareTwoStrings(code1, code2)
-    return compare > 0.93
+    return compare == 1
   }
 
   return false
@@ -241,8 +314,8 @@ export function groupBy (arr, key) {
   }, {})
 }
 
-export function concatWithSeperator (list, seperator) {
-  return list.reduce((sum, item) => sum + item + seperator, '').slice(0, -seperator.length)
+export function concatWithSeparator (list, separator) {
+  return list.reduce((sum, item) => sum + item + separator, '').slice(0, -separator.length)
 }
 
 export function escapeRegExp (str) {
@@ -251,6 +324,27 @@ export function escapeRegExp (str) {
 
 function replaceLibReference (code, pos) {
   return code.substring(0, pos) + '0000000000000000000000000000000000000000' + code.substring(pos + 40)
+}
+
+function removeByIndex (code, index, length, emptyRef) {
+  if (!code) return code
+  return code.slice(0, index) + emptyRef + code.slice(index + length)
+}
+
+function removeImmutableReference (code1, code2) {
+  try {
+    const refOccurrence = code2.match(/7f0000000000000000000000000000000000000000000000000000000000000000/g)
+    if (!refOccurrence) return code1
+    let offset = 0
+    refOccurrence.map((value) => {
+      offset = code2.indexOf(value, offset)
+      code1 = removeByIndex(code1, offset, value.length, '7f0000000000000000000000000000000000000000000000000000000000000000')
+      offset = offset + 1
+    })
+  } catch (e) {
+    console.log('error removeImmutableReference', e)
+  }
+  return code1
 }
 
 function findCallInternal (index, rootCall, callsPath) {

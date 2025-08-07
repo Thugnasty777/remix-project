@@ -1,9 +1,10 @@
-import { PermissionHandler } from './app/ui/persmission-handler'
+import { PermissionHandler } from './app/ui/permission-handler'
 import { PluginManager } from '@remixproject/engine/lib/manager'
 import { EventEmitter } from 'events'
 import { Engine } from '@remixproject/engine/lib/engine'
 import { PluginBase, Profile } from '@remixproject/plugin-utils'
 import { IframePlugin, ViewPlugin, WebsocketPlugin } from '@remixproject/engine-web'
+import { IframeReactPlugin } from '@remix-ui/app'
 /* eslint-disable camelcase */
 
 interface SetPluginOptionType {
@@ -11,15 +12,15 @@ interface SetPluginOptionType {
 }
 
 export class RemixEngine extends Engine {
-  event: EventEmitter;
+  event: EventEmitter
   setPluginOption ({ name, kind }) : SetPluginOptionType
   onRegistration (plugin) : void
 }
 
-export function isNative(name: any): any;
+export function isNative(name: any): any
 /**
  * Checks if plugin caller 'from' is allowed to activate plugin 'to'
- * The caller can have 'canActivate' as a optional property in the plugin profile.
+ * The caller can have 'canActivate' as an optional property in the plugin profile.
  * This is an array containing the 'name' property of the plugin it wants to call.
  * canActivate = ['plugin1-to-call','plugin2-to-call',....]
  * or the plugin is allowed by default because it is native
@@ -27,33 +28,30 @@ export function isNative(name: any): any;
  * @param {any, any}
  * @returns {boolean}
  */
-export function canActivate(from: any, to: any): boolean;
+export function canActivate(from: any, to: any): boolean
 export class RemixAppManager extends PluginManager {
-  constructor();
-    event: EventEmitter;
-    pluginsDirectory: string;
-    pluginLoader: PluginLoader;
-    permissionHandler: PermissionHandler;
-    getAll(): import('@remixproject/plugin-utils').Profile<any>[];
-    getIds(): string[];
-    isDependent(name: any): any;
-    isRequired(name: any): any;
-    registeredPlugins(): Promise<any>;
-    turnPluginOn(name: string | string[]);
-    turnPluginOff(name: string);
+  constructor()
+  event: EventEmitter
+  pluginsDirectory: string
+  pluginLoader: PluginLoader // eslint-disable-line no-use-before-define
+  getAll(): import('@remixproject/plugin-utils').Profile<any>[]
+  getIds(): string[]
+  isDependent(name: any): any
+  isRequired(name: any): any
+  registeredPlugins(): Promise<any>
 }
 
 export class PluginManagerSettings {
-  openDialog(): void;
-  permissions: any;
-  currentSetting: any;
-  onValidation(): void;
+  openDialog(): void
+  permissions: any
+  currentSetting: any
+  onValidation(): void
   /** Clear one permission from a plugin */
-  clearPersmission(from: string, to: string, method: string): void;
-  /** Clear all persmissions from a plugin */
-  clearAllPersmission(to: string): void;
-  settings(): any;
-  render(): any;
+  clearPermission(from: string, to: string, method: string): void
+  /** Clear all permissions from a plugin */
+  clearAllPermission(to: string): void
+  settings(): any
+  render(): any
 }
 
 export type PluginPermissions = {
@@ -66,15 +64,15 @@ export type PluginPermissions = {
   }
 }
 
-export class PluginManagerComponent extends ViewPlugin extends Plugin implements PluginBase {
+export class PluginManagerComponent extends ViewPlugin implements PluginBase {
   constructor(appManager: RemixAppManager, engine: Engine)
   appManager: RemixAppManager
   pluginSettings: PluginManagerSettings
-  app: PluginApi<any>
+  app: PluginApi<any> // eslint-disable-line no-undef
   engine: Engine
   htmlElement: HTMLDivElement
-  views: { root: null, items: {} }
-  localPlugin: LocalPlugin
+  views: { root: null, items: Record<any, any> }
+  localPlugin: LocalPlugin // eslint-disable-line no-use-before-define
   pluginNames: string[]
   inactivePlugins: Profile[]
   activePlugins: Profile[]
@@ -88,13 +86,13 @@ export class PluginManagerComponent extends ViewPlugin extends Plugin implements
   render(): HTMLDivElement
   getAndFilterPlugins: (filter?: string, profiles?: Profile[]) => void
   triggerEngineEventListener: () => void
-  activateAndRegisterLocalPlugin: (localPlugin: IframePlugin | WebsocketPlugin) => Promise<void>
+  activateAndRegisterLocalPlugin: (localPlugin: IframePlugin | IframeReactPlugin | WebsocketPlugin) => Promise<void>
   activeProfiles: string[]
   _paq: any
 }
 
 // eslint-disable-next-line no-use-before-define
-export = LocalPlugin;
+export = LocalPlugin
 declare class LocalPlugin {
   /**
      * Open a modal to create a local plugin
@@ -102,64 +100,56 @@ declare class LocalPlugin {
      * @returns {Promise<{api: any, profile: any}>} A promise with the new plugin profile
      */
   open(plugins: any[]): Promise<{
-        api: any;
-        profile: any;
-    }>;
+    api: any
+    profile: any
+  }>
 
-    profile: any;
-    /**
+  profile: any
+  /**
      * Create the object to add to the plugin-list
      */
-    create(): any;
-    updateName({ target }: {
-        target: any;
-    }): void;
+  create(): any
+  updateName({ target }: {
+    target: any
+  }): void
 
-    updateUrl({ target }: {
-        target: any;
-    }): void;
+  updateUrl({ target }: {
+    target: any
+  }): void
 
-    updateDisplayName({ target }: {
-        target: any;
-    }): void;
+  updateDisplayName({ target }: {
+    target: any
+  }): void
 
-    updateProfile(key: any, e: any): void;
-    updateMethods({ target }: {
-        target: any;
-    }): void;
+  updateProfile(key: any, e: any): void
+  updateMethods({ target }: {
+    target: any
+  }): void
 
-    /** The form to create a local plugin */
-    form(): any;
+  /** The form to create a local plugin */
+  form(): any
 }
 
 export interface PluginManagerContextProviderProps {
-  children: React.ReactNode
+  children: React.ReactNode // eslint-disable-line no-undef
   pluginComponent: PluginManagerComponent
 }
 
 export interface RemixUiPluginManagerProps {
   pluginComponent: PluginManagerComponent
-  pluginManagerSettings: PluginManagerSettings
+  pluginManagerSettings?: PluginManagerSettings
 }
 /** @class Reference loaders.
- *  A loader is a get,set based object which load a workspace from a defined sources.
+ *  A loader is a get, set based object which load a workspace from a defined sources.
  *  (localStorage, queryParams)
  **/
 declare class PluginLoader {
-  get currentLoader(): any;
-    donotAutoReload: string[];
-    loaders: {};
-    current: string;
-    set(plugin: any, actives: any): void;
-    get(): any;
-}
-
-export type PluginManagerSettings = {
-  openDialog: () => void
-  onValidation: () => void
-  clearPermission: (from: any, to: any, method: any) => void
-  settings: () => HTMLElement
-  render: () => HTMLElement
+  get currentLoader(): any
+  donotAutoReload: string[]
+  loaders: Record<any, any>
+  current: string
+  set(plugin: any, actives: any): void
+  get(): any
 }
 
 export interface DefaultLocalPlugin extends Profile {
@@ -178,8 +168,9 @@ export interface FormStateProps {
   url: string
   type: 'iframe' | 'ws'
   hash: string
-  methods: any
+  methods: string[]
   location: string
+  canActivate: string[]
 }
 
 export type PluginManagerProfile = Profile & {
@@ -195,14 +186,6 @@ export type PluginManagerProfile = Profile & {
   version: any
   type: 'iframe' | 'ws'
   hash: string
-}
-export type LocalPlugin = {
-  create: () => Profile
-  updateName: (target: string) => void
-  updateDisplayName: (displayName: string) => void
-  updateProfile: (key: string, e: Event) => void
-  updateMethods: (target: any) => void
-  form: () => HTMLElement
 }
 
 export { }

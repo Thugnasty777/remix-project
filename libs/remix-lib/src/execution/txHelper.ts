@@ -1,10 +1,10 @@
 'use strict'
-import { ethers } from 'ethers'
+import { Interface, AbiCoder } from 'ethers'
 
 export function makeFullTypeDefinition (typeDef) {
   if (typeDef && typeDef.type.indexOf('tuple') === 0 && typeDef.components) {
-    const innerTypes = typeDef.components.map((innerType) => { return this.makeFullTypeDefinition(innerType) })
-    return `tuple(${innerTypes.join(',')})${this.extractSize(typeDef.type)}`
+    const innerTypes = typeDef.components.map((innerType) => { return makeFullTypeDefinition(innerType) })
+    return `tuple(${innerTypes.join(',')})${extractSize(typeDef.type)}`
   }
   return typeDef.type
 }
@@ -14,12 +14,12 @@ export function encodeParams (funABI, args) {
   if (funABI.inputs && funABI.inputs.length) {
     for (let i = 0; i < funABI.inputs.length; i++) {
       const type = funABI.inputs[i].type
-      // "false" will be converting to `false` and "true" will be working
-      // fine as abiCoder assume anything in quotes as `true`
-      if (type === 'bool' && args[i] === 'false') {
-        args[i] = false
+      if (type === 'bool') {
+        if (args[i] === false || args[i] === 'false' || args[i] === '0' || args[i] === 0) args[i] = false
+        else if (args[i] === true || args[i] === 'true' || args[i] === '1' || args[i] === 1) args[i] = true
+        else throw new Error(`provided value for boolean is invalid: ${args[i]}`)
       }
-      types.push(type.indexOf('tuple') === 0 ? this.makeFullTypeDefinition(funABI.inputs[i]) : type)
+      types.push(type.indexOf('tuple') === 0 ? makeFullTypeDefinition(funABI.inputs[i]) : type)
       if (args.length < types.length) {
         args.push('')
       }
@@ -28,26 +28,26 @@ export function encodeParams (funABI, args) {
 
   // NOTE: the caller will concatenate the bytecode and this
   //       it could be done here too for consistency
-  const abiCoder = new ethers.utils.AbiCoder()
+  const abiCoder = new AbiCoder()
   return abiCoder.encode(types, args)
 }
 
 export function encodeFunctionId (funABI) {
   if (funABI.type === 'fallback' || funABI.type === 'receive') return '0x'
-  const abi = new ethers.utils.Interface([funABI])
-  return abi.getSighash(funABI.name)
+  const abi = new Interface([funABI])
+  return abi.getFunction(funABI.name).selector
 }
 
-export function getFunctionFragment (funABI): ethers.utils.Interface {
+export function getFunctionFragment (funABI): Interface {
   if (funABI.type === 'fallback' || funABI.type === 'receive') return null
-  return new ethers.utils.Interface([funABI])
+  return new Interface([funABI])
 }
 
 export function sortAbiFunction (contractabi) {
   // Check if function is constant (introduced with Solidity 0.6.0)
   const isConstant = ({ stateMutability }) => stateMutability === 'view' || stateMutability === 'pure'
   // Sorts the list of ABI entries. Constant functions will appear first,
-  // followed by non-constant functions. Within those t wo groupings, functions
+  // followed by non-constant functions. Within those two groupings, functions
   // will be sorted by their names.
   return contractabi.sort(function (a, b) {
     if (isConstant(a) && !isConstant(b)) {
@@ -66,7 +66,7 @@ export function sortAbiFunction (contractabi) {
 }
 
 export function getConstructorInterface (abi) {
-  const funABI = { name: '', inputs: [], type: 'constructor', payable: false, outputs: [] }
+  const funABI = { name: '', inputs: [], type: 'constructor', payable: false, outputs: []}
   if (typeof abi === 'string') {
     try {
       abi = JSON.parse(abi)
@@ -102,17 +102,25 @@ export function extractSize (type) {
   return size ? size[2] : ''
 }
 
+export function getFunctionLiner (fn, detailTuple: boolean = true) {
+  /*
+    if detailsTuple is True, this will return something like fnName((uint, string))
+    if detailsTuple is False, this will return something like fnName(tuple)
+  */
+  return fn.name + '(' + fn.inputs.map((value) => {
+    if (detailTuple && value.components) {
+      const fullType = makeFullTypeDefinition(value)
+      return fullType.replace(/tuple/g, '') // return of makeFullTypeDefinition might contain `tuple`, need to remove it cause `methodIdentifier` (fnName) does not include `tuple` keyword
+    } else {
+      return value.type
+    }
+  }).join(',') + ')'
+}
+
 export function getFunction (abi, fnName) {
   for (let i = 0; i < abi.length; i++) {
     const fn = abi[i]
-    if (fn.type === 'function' && fnName === fn.name + '(' + fn.inputs.map((value) => {
-      if (value.components) {
-        const fullType = this.makeFullTypeDefinition(value)
-        return fullType.replace(/tuple/g, '') // return of makeFullTypeDefinition might contain `tuple`, need to remove it cause `methodIdentifier` (fnName) does not include `tuple` keyword
-      } else {
-        return value.type
-      }
-    }).join(',') + ')') {
+    if (fn.type === 'function' && (fnName === getFunctionLiner(fn, true) || fnName === getFunctionLiner(fn, false))) {
       return fn
     }
   }

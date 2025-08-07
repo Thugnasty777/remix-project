@@ -1,15 +1,19 @@
+import { CustomTooltip } from '@remix-ui/helper'
 import React from 'react' //eslint-disable-line
+import { RemixUiStaticAnalyserState } from '../staticanalyser'
 
 interface ErrorRendererProps {
-  message: any;
-  opt: any,
+  message: any
+  opt: any
   warningErrors: any
   editor: any
+  name: string
+  ssaState: RemixUiStaticAnalyserState
 }
 
-const ErrorRenderer = ({ message, opt, editor }: ErrorRendererProps) => {
+const ErrorRenderer = ({ message, opt, editor, name, ssaState }: ErrorRendererProps) => {
   const getPositionDetails = (msg: any) => {
-    const result = { } as Record<string, number | string>
+    const result = {} as Record<string, number | string>
 
     // To handle some compiler warning without location like SPDX license warning etc
     if (!msg.includes(':')) return { errLine: -1, errCol: -1, errFile: msg }
@@ -25,9 +29,11 @@ const ErrorRenderer = ({ message, opt, editor }: ErrorRendererProps) => {
     return result
   }
 
-  const handlePointToErrorOnClick = (location, fileName) => {
-    editor.call('editor', 'discardHighlight')
-    editor.call('editor', 'highlight', location, fileName)
+  const handlePointToErrorOnClick = async (location, fileName) => {
+    await editor.call('editor', 'discardHighlight')
+    await editor.call('editor', 'highlight', location, fileName, '', {
+      focus: true
+    })
   }
 
   if (!message) return
@@ -45,18 +51,33 @@ const ErrorRenderer = ({ message, opt, editor }: ErrorRendererProps) => {
   return (
     <div>
       <div className={`sol ${opt.type} ${classList}`}>
-        <div className="close" data-id="renderer">
-          <i className="fas fa-times"></i>
+        <div
+          className="d-flex flex-column"
+          data-id={`${name}Button`}
+          onClick={async () => await handlePointToErrorOnClick(opt.location, opt.fileName)}
+          style={{
+            cursor: 'pointer',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis'
+          }}
+        >
+          <span className="h6 font-weight-bold">{opt.name}</span>
+          <span>{opt.item.warning}</span>
+          {opt.item.more ? (
+            <span>
+              <a href={opt.item.more} target="_blank">
+                more
+              </a>
+            </span>
+          ) : (
+            <span> </span>
+          )}
+          <div>
+            <CustomTooltip placement="right" tooltipId="errorTooltip" tooltipText={`Position in ${ssaState.file}`} tooltipClasses="text-nowrap">
+              <span>Pos: {opt.locationString}</span>
+            </CustomTooltip>
+          </div>
         </div>
-        <span className='d-flex flex-column' onClick={() => handlePointToErrorOnClick(opt.location, opt.fileName)}>
-          <span className='h6 font-weight-bold'>{opt.name}</span>
-          { opt.item.warning }
-          {opt.item.more
-            ? <span><a href={opt.item.more} target='_blank'>more</a></span>
-            : <span> </span>
-          }
-          <span title={`Position in ${opt.errFile}`}>Pos: {opt.locationString}</span>
-        </span>
       </div>
     </div>
   )

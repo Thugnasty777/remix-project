@@ -1,6 +1,6 @@
 import async from 'async'
 import * as changeCase from 'change-case'
-import Web3 from 'web3'
+import { Web3 } from 'web3'
 import assertionEvents from './assertionEvents'
 import {
   RunListInterface, TestCbInterface, TestResultInterface, ResultCbInterface,
@@ -9,7 +9,7 @@ import {
 
 /**
  * @dev Get function name using method signature
- * @param signature siganture
+ * @param signature signature
  * @param methodIdentifiers Object containing all methods identifier
  */
 
@@ -71,13 +71,13 @@ function isNodeTypeIn (node: AstNode, typesList: string[]): boolean {
 }
 
 /**
- * @dev Get overrided sender provided using natspec
- * @param userdoc method user documentaion
+ * @dev Get overridden sender provided using natspec
+ * @param userdoc method user documentation
  * @param signature signature
  * @param methodIdentifiers Object containing all methods identifier
  */
 
-function getOverridedSender (userdoc: UserDocumentation, signature: string, methodIdentifiers: Record <string, string>): string | null {
+function getOverriddenSender (userdoc: UserDocumentation, signature: string, methodIdentifiers: Record <string, string>): string | null {
   const fullName: string | null = getFunctionFullName(signature, methodIdentifiers)
   const senderRegex = /#sender: account-+(\d)/g
   const accountIndex: RegExpExecArray | null = fullName && userdoc.methods[fullName] ? senderRegex.exec(userdoc.methods[fullName].notice) : null
@@ -86,7 +86,7 @@ function getOverridedSender (userdoc: UserDocumentation, signature: string, meth
 
 /**
  * @dev Get value provided using natspec
- * @param userdoc method user documentaion
+ * @param userdoc method user documentation
  * @param signature signature
  * @param methodIdentifiers Object containing all methods identifier
  */
@@ -214,10 +214,12 @@ export function runTest (testName: string, testObject: any, contractDetails: Com
   let passingNum = 0
   let failureNum = 0
   let timePassed = 0
+  const failedTransactions = {}
   const isJSONInterfaceAvailable = testObject && testObject.options && testObject.options.jsonInterface
   if (!isJSONInterfaceAvailable) { return resultsCallback(new Error('Contract interface not available'), { passingNum, failureNum, timePassed }) }
   const runList: RunListInterface[] = createRunList(testObject.options.jsonInterface, fileAST, testName)
   const web3 = opts.web3 || new Web3()
+  web3.eth.handleRevert = true // enables returning error reason on revert
   const accts: TestResultInterface = {
     type: 'accountList',
     value: opts.accounts
@@ -232,8 +234,9 @@ export function runTest (testName: string, testObject: any, contractDetails: Com
   testCallback(undefined, resp)
   async.eachOfLimit(runList, 1, function (func, index, next) {
     let sender: string | null = null
+    let hhLogs
     if (func.signature) {
-      sender = getOverridedSender(contractDetails.userdoc, func.signature, contractDetails.evm.methodIdentifiers)
+      sender = getOverriddenSender(contractDetails.userdoc, func.signature, contractDetails.evm.methodIdentifiers)
       if (opts.accounts && sender) {
         sender = opts.accounts[sender]
       }
@@ -243,25 +246,28 @@ export function runTest (testName: string, testObject: any, contractDetails: Com
     if (func.inputs && func.inputs.length > 0) { return resultsCallback(new Error(`Method '${func.name}' can not have parameters inside a test contract`), { passingNum, failureNum, timePassed }) }
     const method = testObject.methods[func.name].apply(testObject.methods[func.name], [])
     const startTime = Date.now()
+    let debugTxHash:string
     if (func.constant) {
       sendParams = {}
       const tagTimestamp = 'remix_tests_tag' + Date.now()
-      sendParams.timestamp = tagTimestamp
+      if (web3.remix && web3.remix.registerCallId) web3.remix.registerCallId(tagTimestamp)
       method.call(sendParams).then(async (result) => {
         const time = (Date.now() - startTime) / 1000.0
         let tagTxHash
-        let hhLogs
-        if (web3.eth && web3.eth.getHashFromTagBySimulator) tagTxHash = await web3.eth.getHashFromTagBySimulator(tagTimestamp)
-        if (web3.eth && web3.eth.getHHLogsForTx) hhLogs = await web3.eth.getHHLogsForTx(tagTxHash)
+        if (web3.remix && web3.remix.getHashFromTagBySimulator) tagTxHash = await web3.remix.getHashFromTagBySimulator(tagTimestamp)
+        if (web3.remix && web3.remix.getHHLogsForTx) hhLogs = await web3.remix.getHHLogsForTx(tagTxHash)
+        debugTxHash = tagTxHash
         if (result) {
           const resp: TestResultInterface = {
             type: 'testPass',
             value: changeCase.sentenceCase(func.name),
             filename: testObject.filename,
             time: time,
-            context: testName
+            context: testName,
+            web3,
+            debugTxHash
           }
-          if (hhLogs) resp.hhLogs = hhLogs
+          if (hhLogs && hhLogs.length) resp.hhLogs = hhLogs
           testCallback(undefined, resp)
           passingNum += 1
           timePassed += time
@@ -272,9 +278,11 @@ export function runTest (testName: string, testObject: any, contractDetails: Com
             filename: testObject.filename,
             time: time,
             errMsg: 'function returned false',
-            context: testName
+            context: testName,
+            web3,
+            debugTxHash
           }
-          if (hhLogs) resp.hhLogs = hhLogs
+          if (hhLogs && hhLogs.length) resp.hhLogs = hhLogs
           testCallback(undefined, resp)
           failureNum += 1
           timePassed += time
@@ -293,18 +301,18 @@ export function runTest (testName: string, testObject: any, contractDetails: Com
       sendParams.gas = 10000000 * 8
       method.send(sendParams).on('receipt', async (receipt) => {
         try {
-          let hhLogs
-          if (web3.eth && web3.eth.getHHLogsForTx) hhLogs = await web3.eth.getHHLogsForTx(receipt.transactionHash)
+          debugTxHash = receipt.transactionHash
+          if (web3.remix && web3.remix.getHHLogsForTx) hhLogs = await web3.remix.getHHLogsForTx(receipt.transactionHash)
           const time: number = (Date.now() - startTime) / 1000.0
           const assertionEventHashes = assertionEvents.map(e => Web3.utils.sha3(e.name + '(' + e.params.join() + ')'))
           let testPassed = false
-          for (const i in receipt.events) {
-            let events = receipt.events[i]
+          for (const i in receipt.logs) {
+            let events = receipt.logs[i]
             if (!Array.isArray(events)) events = [events]
             for (const event of events) {
-              const eIndex = assertionEventHashes.indexOf(event.raw.topics[0]) // event name topic will always be at index 0
+              const eIndex = assertionEventHashes.indexOf(event.topics[0]) // event name topic will always be at index 0
               if (eIndex >= 0) {
-                const testEvent = web3.eth.abi.decodeParameters(assertionEvents[eIndex].params, event.raw.data)
+                const testEvent = web3.eth.abi.decodeParameters(assertionEvents[eIndex].params, event.data)
                 if (!testEvent[0]) {
                   const assertMethod = testEvent[2]
                   if (assertMethod === 'ok') { // for 'Assert.ok' method
@@ -322,9 +330,11 @@ export function runTest (testName: string, testObject: any, contractDetails: Com
                     assertMethod,
                     returned: testEvent[3],
                     expected: testEvent[4],
-                    location
+                    location,
+                    web3,
+                    debugTxHash
                   }
-                  if (hhLogs) resp.hhLogs = hhLogs
+                  if (hhLogs && hhLogs.length) resp.hhLogs = hhLogs
                   testCallback(undefined, resp)
                   failureNum += 1
                   timePassed += time
@@ -341,13 +351,15 @@ export function runTest (testName: string, testObject: any, contractDetails: Com
               value: changeCase.sentenceCase(func.name),
               filename: testObject.filename,
               time: time,
-              context: testName
+              context: testName,
+              web3,
+              debugTxHash
             }
-            if (hhLogs) resp.hhLogs = hhLogs
+            if (hhLogs && hhLogs.length) resp.hhLogs = hhLogs
             testCallback(undefined, resp)
             passingNum += 1
             timePassed += time
-          } else if (hhLogs) {
+          } else if (hhLogs && hhLogs.length) {
             const resp: TestResultInterface = {
               type: 'logOnly',
               value: changeCase.sentenceCase(func.name),
@@ -365,16 +377,29 @@ export function runTest (testName: string, testObject: any, contractDetails: Com
           console.error(err)
           return next(err)
         }
-      }).on('error', function (err: Error) {
+      }).on('error', async (err) => {
         const time: number = (Date.now() - startTime) / 1000.0
+        if (failedTransactions[err.receipt.transactionHash]) return // we are already aware of this transaction failing.
+        failedTransactions[err.receipt.transactionHash] = time
+        let errMsg = err.message
+        let txHash
+        if (err.reason) errMsg = `transaction reverted with the reason: ${err.reason}`
         const resp: TestResultInterface = {
           type: 'testFailure',
           value: changeCase.sentenceCase(func.name),
           filename: testObject.filename,
           time: time,
-          errMsg: err.message,
-          context: testName
+          errMsg,
+          context: testName,
+          web3
         }
+        if (err.receipt) txHash = err.receipt.transactionHash
+        else if (err.message.includes('Transaction has been reverted by the EVM')) {
+          txHash = JSON.parse(err.message.replace('Transaction has been reverted by the EVM:', '')).transactionHash
+        }
+        if (web3.remix && web3.remix.getHHLogsForTx && txHash) hhLogs = await web3.remix.getHHLogsForTx(txHash)
+        if (hhLogs && hhLogs.length) resp.hhLogs = hhLogs
+        resp.debugTxHash = txHash
         testCallback(undefined, resp)
         failureNum += 1
         timePassed += time

@@ -1,5 +1,6 @@
 'use strict'
-import { helpers } from '@remix-project/remix-lib'
+import { helpers, util } from '@remix-project/remix-lib'
+const { toHexPaddedString } = util
 const { ui } = helpers
 
 // vmTraceIndex has to point to a CALL, CODECALL, ...
@@ -9,7 +10,7 @@ export function resolveCalledAddress (vmTraceIndex, trace) {
     return contractCreationToken(vmTraceIndex)
   } else if (isCallInstruction(step)) {
     const stack = step.stack // callcode, delegatecall, ...
-    return ui.normalizeHexAddress(stack[stack.length - 2])
+    return ui.normalizeHexAddress(toHexPaddedString(stack[stack.length - 2]))
   }
   return undefined
 }
@@ -43,7 +44,7 @@ export function isSSTOREInstruction (step) {
 }
 
 export function isSHA3Instruction (step) {
-  return step.op === 'SHA3'
+  return step.op === 'SHA3' || step.op === 'KECCAK256'
 }
 
 export function newContextStorage (step) {
@@ -53,7 +54,7 @@ export function newContextStorage (step) {
 export function isCallToPrecompiledContract (index, trace) {
   // if stack empty => this is not a precompiled contract
   const step = trace[index]
-  if (this.isCallInstruction(step)) {
+  if (isCallInstruction(step)) {
     return index + 1 < trace.length && trace[index + 1].stack.length !== 0
   }
   return false

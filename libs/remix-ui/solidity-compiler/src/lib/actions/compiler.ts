@@ -1,4 +1,5 @@
 import React from 'react'
+import { CompileTabLogic } from '../logic/compileTabLogic'
 
 export const setEditorMode = (mode: string) => {
   return {
@@ -26,10 +27,10 @@ export const resetCompilerMode = () => (dispatch: React.Dispatch<any>) => {
   })
 }
 
-export const listenToEvents = (compileTabLogic, api) => (dispatch: React.Dispatch<any>) => {
-  api.on('editor', 'sessionSwitched', () => {
-    dispatch(setEditorMode('sessionSwitched'))
-  })
+export const listenToEvents = (compileTabLogic: CompileTabLogic, api) => (dispatch: React.Dispatch<any>) => {
+  api.onSessionSwitched = () => {
+    dispatch(setEditorMode('sessionSwitched_' + Date.now()))
+  }
 
   compileTabLogic.event.on('startingCompilation', () => {
     dispatch(setCompilerMode('startingCompilation'))
@@ -39,19 +40,18 @@ export const listenToEvents = (compileTabLogic, api) => (dispatch: React.Dispatc
     dispatch(setCompilerMode('compilationDuration', speed))
   })
 
-  api.on('editor', 'contentChanged', () => {
-    dispatch(setEditorMode('contentChanged'))
-  })
-
+  api.onContentChanged = () => {
+    dispatch(setEditorMode('contentChanged_' + Date.now()))
+  }
   compileTabLogic.compiler.event.register('loadingCompiler', () => {
     dispatch(setCompilerMode('loadingCompiler'))
   })
 
-  compileTabLogic.compiler.event.register('compilerLoaded', () => {
-    dispatch(setCompilerMode('compilerLoaded'))
+  compileTabLogic.compiler.event.register('compilerLoaded', (version, license) => {
+    dispatch(setCompilerMode('compilerLoaded', version, license))
   })
 
-  compileTabLogic.compiler.event.register('compilationFinished', (success, data, source) => {
-    dispatch(setCompilerMode('compilationFinished', success, data, source))
+  compileTabLogic.compiler.event.register('compilationFinished', (success, data, source, input, version) => {
+    dispatch(setCompilerMode('compilationFinished', success, data, source, input, version))
   })
 }

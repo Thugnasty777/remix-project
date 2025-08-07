@@ -8,7 +8,7 @@ export declare interface SourceMappings {
 }
 
 /**
- * Turn an character offset into a "LineColPosition".
+ * Turn a character offset into a "LineColPosition".
  *
  * @param offset  The character offset to convert.
  */
@@ -56,8 +56,9 @@ export function sourceLocationFromSrc (src: string): Location {
 
 /**
  * Routines for retrieving solc AST object(s) using some criteria, usually
- * includng "src' information.
+ * including "src' information.
  */
+// eslint-disable-next-line no-redeclare
 export class SourceMappings {
   readonly source: string;
   readonly lineBreaks: Array<number>;
@@ -72,7 +73,7 @@ export class SourceMappings {
       lineBreaks.push(pos)
     }
     this.lineBreaks = lineBreaks
-  };
+  }
 
   /**
    * Get a list of nodes that are at the given "position".

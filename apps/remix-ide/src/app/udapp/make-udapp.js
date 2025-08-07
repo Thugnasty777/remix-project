@@ -1,43 +1,30 @@
-var registry = require('../../global/registry')
+import {Registry} from '@remix-project/remix-lib'
+
 var remixLib = require('@remix-project/remix-lib')
-var yo = require('yo-yo')
 var EventsDecoder = remixLib.execution.EventsDecoder
 
-const transactionDetailsLinks = {
-  Main: 'https://www.etherscan.io/tx/',
-  Rinkeby: 'https://rinkeby.etherscan.io/tx/',
-  Ropsten: 'https://ropsten.etherscan.io/tx/',
-  Kovan: 'https://kovan.etherscan.io/tx/',
-  Goerli: 'https://goerli.etherscan.io/tx/'
-}
-
-function txDetailsLink (network, hash) {
-  if (transactionDetailsLinks[network]) {
-    return transactionDetailsLinks[network] + hash
-  }
-}
-
 export function makeUdapp (blockchain, compilersArtefacts, logHtmlCallback) {
-  // ----------------- UniversalDApp -----------------
-  // TODO: to remove when possible
-  blockchain.event.register('transactionBroadcasted', (txhash, networkName) => {
-    var txLink = txDetailsLink(networkName, txhash)
-    if (txLink && logHtmlCallback) logHtmlCallback(yo`<a href="${txLink}" target="_blank">${txLink}</a>`)
-  })
-
   // ----------------- Tx listener -----------------
   const _transactionReceipts = {}
   const transactionReceiptResolver = (tx, cb) => {
     if (_transactionReceipts[tx.hash]) {
       return cb(null, _transactionReceipts[tx.hash])
     }
-    blockchain.web3().eth.getTransactionReceipt(tx.hash, (error, receipt) => {
+    let res = blockchain.web3().eth.getTransactionReceipt(tx.hash, (error, receipt) => {
       if (error) {
         return cb(error)
       }
       _transactionReceipts[tx.hash] = receipt
       cb(null, receipt)
     })
+    if(res && typeof res.then ==='function'){
+      res.then((receipt)=>{
+        _transactionReceipts[tx.hash] = receipt
+        cb(null, receipt)
+      }).catch((error)=>{
+        cb(error)
+      })
+    }
   }
 
   const txlistener = blockchain.getTxListener({
@@ -50,12 +37,12 @@ export function makeUdapp (blockchain, compilersArtefacts, logHtmlCallback) {
     }
   })
 
-  registry.put({ api: txlistener, name: 'txlistener' })
+  Registry.getInstance().put({ api: txlistener, name: 'txlistener' })
   blockchain.startListening(txlistener)
 
   const eventsDecoder = new EventsDecoder({
     resolveReceipt: transactionReceiptResolver
   })
   txlistener.startListening()
-  registry.put({ api: eventsDecoder, name: 'eventsDecoder' })
+  Registry.getInstance().put({ api: eventsDecoder, name: 'eventsDecoder' })
 }

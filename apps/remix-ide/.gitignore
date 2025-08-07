@@ -12,3 +12,8 @@ remix
 TODO
 .tern-port
 temp_publish_docker
+src/assets/version.json
+src/assets/js/soljson/soljson-v*
+.env
+.env.*.local
+.env.local

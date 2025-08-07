@@ -1,43 +1,63 @@
+import { ICompilerApi, ConfigurationSettings, iSolJsonBinData } from '@remix-project/remix-lib'
+import { CompileTabLogic } from '../logic/compileTabLogic'
+export type onCurrentFileChanged = (fileName: string) => void
+
+//// SolidityScan Types
+
 export interface SolidityCompilerProps {
-  plugin: {
-    contractMap: {
-      file: string
-    } | Record<string, any>
-    compileErrors: any,
-    compileTabLogic: any,
-    contractsDetails: Record<string, any>,
-    contentImport: any,
-    call: (...args) => void
-    on: (...args) => void,
-    setSelectedVersion: (value: string) => void,
-    configurationSettings: ConfigurationSettings,
-    getConfiguration: (value: string) => string,
-    setConfiguration: (name: string, value: string) => void
-  },
+  api: ICompilerApi
 }
 
 export interface CompilerContainerProps {
-  api: any,
-  compileTabLogic: any,
+  api: ICompilerApi,
+  pluginProps: SolidityCompilerProps,
+  compileTabLogic: CompileTabLogic,
+  isHardhatProject: boolean,
+  isTruffleProject: boolean,
+  isFoundryProject: boolean,
+  workspaceName: string,
   tooltip: (message: string | JSX.Element) => void,
-  modal: (title: string, message: string | JSX.Element, okLabel: string, okFn: () => void, cancelLabel?: string, cancelFn?: () => void) => void,
+  modal: (title: string, message: string | JSX.Element, okLabel: string, okFn: () => void, donotHideOnOkClick?: boolean, cancelLabel?: string, cancelFn?: () => void) => void,
   compiledFileName: string,
   updateCurrentVersion: any,
-  configurationSettings: ConfigurationSettings
+  configurationSettings: ConfigurationSettings,
+  configFilePath: string,
+  setConfigFilePath: (path: string) => void,
+  solJsonBinData: iSolJsonBinData
 }
+
 export interface ContractSelectionProps {
-  api: any,
-  contractMap: {
-    file: string
-  } | Record<string, any>,
-  modal: (title: string, message: string | JSX.Element, okLabel: string, okFn: () => void, cancelLabel?: string, cancelFn?: () => void) => void,
+  api: ICompilerApi,
+  compiledFileName: string,
+  contractList: { file: string, name: string }[],
+  compilerInput: Record<string, any>
+  modal: (title: string, message: string | JSX.Element, okLabel: string, okFn: () => void, donotHideOnOkClick?: boolean, cancelLabel?: string, cancelFn?: () => void) => void,
   contractsDetails: Record<string, any>
 }
 
-export interface ConfigurationSettings {
-  version: string,
-  evmVersion: string,
-  language: string,
-  optimize: boolean,
-  runs: string
+interface CompileError {
+  mode?: string,
+  severity?: string,
+  formattedMessage?: string,
+  type?: string
 }
+
+export interface CompileErrors {
+  error: CompileError,
+  errors: CompileError[]
+}
+
+export interface CompilationDetails {
+  contractList: { file: string, name: string }[],
+  contractsDetails: Record<string, any>,
+  target?: string,
+  input?: Record<string, any>
+}
+
+export interface ContractsFile {
+ [currentFile: string]: CompilationDetails
+}
+
+export type ContractPropertyName = 'compilerInput' | 'name' | 'metadata' | 'bytecode' | 'abi' | 'storageLayout'
+  | 'web3Deploy' | 'metadataHash' | 'functionHashes' | 'gasEstimates' | 'devdoc' | 'userdoc' | 'Runtime Bytecode'
+  | 'Assembly'

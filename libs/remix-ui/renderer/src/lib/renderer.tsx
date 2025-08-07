@@ -1,19 +1,38 @@
-import React, { useEffect, useState } from 'react' //eslint-disable-line
+import React, {useEffect, useState} from 'react' //eslint-disable-line
+import { useIntl } from 'react-intl'
+import { CopyToClipboard } from '@remix-ui/clipboard'
+import { helper } from '@remix-project/remix-solidity'
 import './renderer.css'
+const _paq = (window._paq = window._paq || [])
+
 interface RendererProps {
-  message: any;
-  opt?: any,
-  plugin: any,
+  message: any
+  opt?: RendererOptions
+  plugin: any
+  context?: string
 }
 
-export const Renderer = ({ message, opt = {}, plugin }: RendererProps) => {
+type RendererOptions = {
+  useSpan?: boolean
+  type: string
+  errorType?: string
+  errCol?: number
+  errLine?: number
+  errFile?: string
+}
+
+export const Renderer = ({ message, opt, plugin, context }: RendererProps) => {
+  const intl = useIntl()
   const [messageText, setMessageText] = useState(null)
-  const [editorOptions, setEditorOptions] = useState({
+  const [editorOptions, setEditorOptions] = useState<RendererOptions>({
     useSpan: false,
     type: '',
-    errFile: ''
+    errorType: '',
+    errCol: null,
+    errLine: null,
+    errFile: null
   })
-  const [classList] = useState(opt.type === 'error' ? 'alert alert-danger' : 'alert alert-warning')
+  const [classList, setClassList] = useState(opt.type === 'error' ? 'alert alert-danger' : 'alert alert-warning')
   const [close, setClose] = useState(false)
 
   useEffect(() => {
@@ -28,51 +47,20 @@ export const Renderer = ({ message, opt = {}, plugin }: RendererProps) => {
 
     // ^ e.g:
     // browser/gm.sol: Warning: Source file does not specify required compiler version! Consider adding "pragma solidity ^0.6.12
-    // https://github.com/OpenZeppelin/openzeppelin-contracts/blob/release-v3.2.0/contracts/introspection/IERC1820Registry.sol:3:1: ParserError: Source file requires different compiler version (current compiler is 0.7.4+commit.3f05b770.Emscripten.clang) - note that nightly builds are considered to be strictly less than the released version
-    const positionDetails = getPositionDetails(text)
+    // https://github.com/OpenZeppelin/openzeppelin-contracts/blob/release-v3.2.0/contracts/introspection/IERC1820Registry.sol: ParserError: Source file requires different compiler version (current compiler is 0.7.4+commit.3f05b770.Emscripten.clang) - note that nightly builds are considered to be strictly less than the released version
 
-    opt.errLine = positionDetails.errLine
-    opt.errCol = positionDetails.errCol
-    opt.errFile = positionDetails.errFile ? (positionDetails.errFile as string).trim() : ''
-
-    if (!opt.noAnnotations && opt.errFile && opt.errFile !== '') {
-      addAnnotation(opt.errFile, {
-        row: opt.errLine,
-        column: opt.errCol,
-        text: text,
-        type: opt.type
-      })
+    if (!opt.errLine) {
+      const positionDetails = helper.getPositionDetails(text)
+      opt.errLine = !opt.errLine ? positionDetails.errLine as number : opt.errLine
+      opt.errCol = !opt.errCol ? positionDetails.errCol as number : opt.errCol
+      opt.errFile = !opt.errFile ? (positionDetails.errFile ? (positionDetails.errFile as string).trim() : '') : opt.errFile
     }
 
     setMessageText(text)
     setEditorOptions(opt)
     setClose(false)
+    setClassList(opt.type === 'error' ? 'alert alert-danger' : 'alert alert-warning')
   }, [message, opt])
-
-  const getPositionDetails = (msg: string) => {
-    const result = { } as Record<string, number | string>
-
-    // To handle some compiler warning without location like SPDX license warning etc
-    if (!msg.includes(':')) return { errLine: -1, errCol: -1, errFile: '' }
-
-    if (msg.includes('-->')) msg = msg.split('-->')[1].trim()
-
-    // extract line / column
-    let pos = msg.match(/^(.*?):([0-9]*?):([0-9]*?)?/)
-    result.errLine = pos ? parseInt(pos[2]) - 1 : -1
-    result.errCol = pos ? parseInt(pos[3]) : -1
-
-    // extract file
-    pos = msg.match(/^(https:.*?|http:.*?|.*?):/)
-    result.errFile = pos ? pos[1] : msg
-    return result
-  }
-
-  const addAnnotation = (file, error) => {
-    if (file === plugin.getConfiguration('currentFile')) {
-      plugin.call('editor', 'addAnnotation', error, file)
-    }
-  }
 
   const handleErrorClick = (opt) => {
     if (opt.click) {
@@ -86,34 +74,73 @@ export const Renderer = ({ message, opt = {}, plugin }: RendererProps) => {
     setClose(true)
   }
 
-  const _errorClick = (errFile, errLine, errCol) => {
-    if (errFile !== plugin.getConfiguration('currentFile')) {
+  const _errorClick = async (errFile, errLine, errCol) => {
+    if (errFile !== (await plugin.call('config', 'getAppParameter', 'currentFile'))) {
       // TODO: refactor with this._components.contextView.jumpTo
-      const provider = plugin.fileProviderOf(errFile)
-      if (provider) {
-        provider.exists(errFile).then(() => {
-          plugin.open(errFile)
-          plugin.call('editor', 'gotoLine', errLine, errCol)
-        }).catch(error => {
-          if (error) return console.log(error)
-        })
+      if (await plugin.call('fileManager', 'exists', errFile)) {
+        await plugin.call('fileManager', 'open', errFile)
+        await plugin.call('editor', 'gotoLine', errLine, errCol)
       }
     } else {
-      plugin.call('editor', 'gotoLine', errLine, errCol)
+      await plugin.call('editor', 'gotoLine', errLine, errCol)
+    }
+  }
+
+  const askGtp = async () => {
+    try {
+      let content;
+      try {
+        content = await plugin.call('fileManager', 'readFile', editorOptions.errFile)
+      } catch (error) {
+        content = await plugin.call('fileManager', 'readFile', await plugin.call('config', 'getAppParameter', 'currentFile'));
+      }
+      const message = intl.formatMessage({ id: `${context || 'solidity' }.openaigptMessage` }, { content, messageText })
+
+      await plugin.call('popupPanel', 'showPopupPanel', true)
+      setTimeout(async () => {
+        await plugin.call('remixAI' as any, 'chatPipe', 'error_explaining', message)
+      }, 500)
+      _paq.push(['trackEvent', 'ai', 'remixAI', 'error_explaining_SolidityError'])
+    } catch (err) {
+      console.error('unable to ask RemixAI')
+      console.error(err)
     }
   }
 
   return (
     <>
-      {
-        messageText && !close && (
-          <div className={`sol ${editorOptions.type} ${classList}`} data-id={editorOptions.errFile} onClick={() => handleErrorClick(editorOptions)}>
-            { editorOptions.useSpan ? <span> { messageText } </span> : <pre><span>{ messageText }</span></pre> }
-            <div className="close" data-id="renderer" onClick={handleClose}>
-              <i className="fas fa-times"></i>
-            </div>
-          </div>)
-      }
+      {messageText && !close && (
+        <div className={`remixui_sol ${editorOptions.type} ${classList}`} data-id={editorOptions.errFile} onClick={() => handleErrorClick(editorOptions)}>
+          {editorOptions.useSpan ? (
+            <span> {messageText} </span>
+          ) : (
+            <pre>
+              <span>{messageText}</span>
+            </pre>
+          )}
+          <div className="close" data-id="renderer" onClick={handleClose}>
+            <i className="fas fa-times"></i>
+          </div>
+          <div className="d-flex pt-1 flex-row-reverse">
+            <span className="ml-3 pt-1 py-1" >
+              <CopyToClipboard content={messageText} className={` p-0 m-0 far fa-copy ${classList}`} direction={'top'} />
+            </span>
+            <span
+              className="position-relative text-ai text-sm pl-0 pr-2"
+              style={{ fontSize: "x-small", alignSelf: "end" }}
+            >
+            </span>
+            <span
+              className="button border ask-remix-ai-button text-ai btn-sm"
+              onClick={(event) => { event.preventDefault(); askGtp() }}
+              style={{ borderColor: "var(--ai)" }}
+            >
+              Ask RemixAI
+            </span>
+
+          </div>
+        </div>
+      )}
     </>
   )
 }

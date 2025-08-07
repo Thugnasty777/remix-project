@@ -11,7 +11,7 @@ export function formatMemory (mem, width) {
 
   for (let k = 0; k < mem.length; k += (width * 2)) {
     const memory = mem.substr(k, width * 2)
-    const content = this.tryConvertAsciiFormat(memory)
+    const content = tryConvertAsciiFormat(memory)
     ret['0x' + (k / 2).toString(16)] = content.raw + '\t' + content.ascii
   }
   return ret
@@ -40,18 +40,18 @@ export function tryConvertAsciiFormat (memorySlot) {
  * @param {Object} css3 - css inline declaration
  * @param {Object} ...
  * @return {String} css inline style
- *                  if the key start with * the value is direcly appended to the inline style (which should be already inline style formatted)
- *                  used if multiple occurences of the same key is needed
+ *                  if the key start with * the value is directly appended to the inline style (which should be already inline style formatted)
+ *                  used if multiple occurrences of the same key is needed
  */
 export function formatCss (css1, css2) {
   let ret = ''
-  for (const arg in arguments) {
-    for (const k in arguments[arg]) {
-      if (arguments[arg][k] && ret.indexOf(k) === -1) {
+  for (const arg in arguments) { // eslint-disable-line
+    for (const k in arguments[arg]) { // eslint-disable-line
+      if (arguments[arg][k] && ret.indexOf(k) === -1) { // eslint-disable-line
         if (k.indexOf('*') === 0) {
-          ret += arguments[arg][k]
+          ret += arguments[arg][k] // eslint-disable-line
         } else {
-          ret += k + ':' + arguments[arg][k] + ';'
+          ret += k + ':' + arguments[arg][k] + ';' // eslint-disable-line
         }
       }
     }

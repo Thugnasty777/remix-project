@@ -1,5 +1,6 @@
 'use strict'
 import { util } from '@remix-project/remix-lib'
+const { toHexPaddedString } = util
 // eslint-disable-next-line camelcase
 const { sha3_256 } = util
 
@@ -17,6 +18,7 @@ export class TraceCache {
   memoryChanges
   storageChanges
   sstore
+  formattedMemory
 
   constructor () {
     this.init()
@@ -36,8 +38,9 @@ export class TraceCache {
     this.addresses = []
     this.callDataChanges = []
     this.memoryChanges = []
+    this.formattedMemory = {}
     this.storageChanges = []
-    this.sstore = {} // all sstore occurence in the trace
+    this.sstore = {} // all sstore occurrences in the trace
   }
 
   pushSteps (index, currentCallIndex) {
@@ -53,6 +56,10 @@ export class TraceCache {
     this.memoryChanges.push(value)
   }
 
+  setFormattedMemory (stepIndex, memory) {
+    this.formattedMemory[stepIndex] = memory
+  }
+
   // outOfGas has been removed because gas left logging is apparently made differently
   // in the vm/geth/eth. TODO add the error property (with about the error in all clients)
   pushCall (step, index, address, callStack, reverted) {
@@ -62,7 +69,7 @@ export class TraceCache {
       if (!validReturnStep) {
         this.currentCall.call.reverted = reverted
       }
-      var parent = this.currentCall.parent
+      const parent = this.currentCall.parent
       if (parent) this.currentCall = { call: parent.call, parent: parent.parent }
       return
     }
@@ -95,11 +102,13 @@ export class TraceCache {
   }
 
   pushContractCreationFromMemory (index, token, trace, lastMemoryChange) {
+    const toHexString = arr => Array.from(arr, i => (i as any).toString(16).padStart(2, "0")).join("")
     const memory = trace[lastMemoryChange].memory
     const stack = trace[index].stack
-    const offset = 2 * parseInt(stack[stack.length - 2], 16)
-    const size = 2 * parseInt(stack[stack.length - 3], 16)
-    this.contractCreation[token] = '0x' + memory.join('').substr(offset, size)
+    const offset = 2 * parseInt(toHexPaddedString(stack[stack.length - 2]), 16)
+    const size = 2 * parseInt(toHexPaddedString(stack[stack.length - 3]), 16)
+    const memoryHex = toHexString(memory)
+    this.contractCreation[token] = '0x' + memoryHex.substr(offset, size)
   }
 
   pushContractCreation (token, code) {
@@ -116,23 +125,29 @@ export class TraceCache {
       address: address,
       key: key,
       value: value,
-      hashedKey: key && sha3_256(key)
+      hashedKey: key && sha3_256(key),
+      contextCall: this.currentCall
     }
     this.storageChanges.push(index)
   }
 
   accumulateStorageChanges (index, address, storage) {
     const ret = Object.assign({}, storage)
-    for (var k in this.storageChanges) {
+    for (const k in this.storageChanges) {
       const changesIndex = this.storageChanges[k]
       if (changesIndex > index) {
         return ret
       }
-      var sstore = this.sstore[changesIndex]
-      if (sstore.address === address && sstore.key) {
-        ret[sstore.hashedKey] = {
-          key: sstore.key,
-          value: sstore.value
+      const sstore = this.sstore[changesIndex]
+      if (sstore.address?.toLowerCase() === address?.toLowerCase() && sstore.key) {
+        if (sstore.contextCall?.call?.return < index && sstore.contextCall?.call?.reverted) {
+          // this is a previous call which has reverted. state changes aren't kept.
+          continue
+        } else {
+          ret[sstore.hashedKey] = {
+            key: sstore.key,
+            value: sstore.value
+          }
         }
       }
     }

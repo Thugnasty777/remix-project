@@ -1,67 +1,99 @@
-import { Plugin } from '@remixproject/engine'
+import { ICompilerApi } from '@remix-project/remix-lib'
+import { getValidLanguage, Compiler } from '@remix-project/remix-solidity'
+import { EventEmitter } from 'events'
 
-const packageJson = require('../../../../../../package.json')
-const Compiler = require('@remix-project/remix-solidity').Compiler
-const EventEmitter = require('events')
-const profile = {
-  name: 'solidity-logic',
-  displayName: 'Solidity compiler logic',
-  description: 'Compile solidity contracts - Logic',
-  methods: ['getCompilerState'],
-  version: packageJson.version
+declare global {
+  interface Window {
+    _paq: any
+  }
 }
-export class CompileTab extends Plugin {
+const _paq = window._paq = window._paq || []  //eslint-disable-line
+
+export class CompileTabLogic {
   public compiler
+  public api: ICompilerApi
+  public contentImport
   public optimize
   public runs
   public evmVersion: string
+  public language: string
   public compilerImport
   public event
+  public evmVersions: Array<string>
+  public useFileConfiguration: boolean
+  public configFilePath: string
 
-  constructor (public api, public contentImport) {
-    super(profile)
+  constructor (api: ICompilerApi, contentImport) {
+    this.api = api
+    this.contentImport = contentImport
     this.event = new EventEmitter()
-    this.compiler = new Compiler((url, cb) => this.call('contentImport', 'resolveAndSave', url).then((result) => cb(null, result)).catch((error) => cb(error.message)))
+    this.compiler = new Compiler((url, cb) => api.resolveContentAndSave(url).then((result) => cb(null, result)).catch((error) => cb(error.message)))
+    this.evmVersions = ['default', 'prague', 'cancun', 'shanghai', 'paris', 'london', 'berlin', 'istanbul', 'petersburg', 'constantinople', 'byzantium', 'spuriousDragon', 'tangerineWhistle', 'homestead']
   }
 
   init () {
-    this.optimize = this.api.getParameters().optimize
-    this.optimize = this.optimize === 'true'
-    this.api.setParameters({ optimize: this.optimize })
+    this.optimize = this.api.getCompilerQueryParameters().optimize
+    this.api.setCompilerQueryParameters({ optimize: this.optimize })
     this.compiler.set('optimize', this.optimize)
 
-    this.runs = this.api.getParameters().runs
+    this.runs = this.api.getCompilerQueryParameters().runs
     this.runs = this.runs && this.runs !== 'undefined' ? this.runs : 200
-    this.api.setParameters({ runs: this.runs })
+    this.api.setCompilerQueryParameters({ runs: this.runs })
     this.compiler.set('runs', this.runs)
 
-    this.evmVersion = this.api.getParameters().evmVersion
-    if (this.evmVersion === 'undefined' || this.evmVersion === 'null' || !this.evmVersion) {
+    this.evmVersion = this.api.getCompilerQueryParameters().evmVersion
+    if (
+      this.evmVersion === 'undefined' ||
+      this.evmVersion === 'null' ||
+      !this.evmVersion ||
+      !this.evmVersions.includes(this.evmVersion)) {
       this.evmVersion = null
     }
-    this.api.setParameters({ evmVersion: this.evmVersion })
+    this.api.setCompilerQueryParameters({ evmVersion: this.evmVersion })
     this.compiler.set('evmVersion', this.evmVersion)
+
+    this.language = getValidLanguage(this.api.getCompilerQueryParameters().language)
+    if (this.language != null) {
+      this.compiler.set('language', this.language)
+    }
+
   }
 
-  setOptimize (newOptimizeValue) {
+  setOptimize (newOptimizeValue: boolean) {
     this.optimize = newOptimizeValue
-    this.api.setParameters({ optimize: this.optimize })
+    this.api.setCompilerQueryParameters({ optimize: this.optimize })
     this.compiler.set('optimize', this.optimize)
+  }
+
+  async setUseFileConfiguration (useFileConfiguration: boolean) {
+    this.useFileConfiguration = useFileConfiguration
+    this.compiler.set('useFileConfiguration', useFileConfiguration)
+    await this.setCompilerConfigContent()
+  }
+
+  setConfigFilePath (path) {
+    this.configFilePath = path
+  }
+
+  getConfigFilePath () {
+    return this.configFilePath
   }
 
   setRuns (runs) {
     this.runs = runs
-    this.api.setParameters({ runs: this.runs })
+    this.api.setCompilerQueryParameters({ runs: this.runs })
     this.compiler.set('runs', this.runs)
   }
 
   setEvmVersion (newEvmVersion) {
     this.evmVersion = newEvmVersion
-    this.api.setParameters({ evmVersion: this.evmVersion })
+    this.api.setCompilerQueryParameters({ evmVersion: this.evmVersion })
     this.compiler.set('evmVersion', this.evmVersion)
   }
 
-  getCompilerState () {
+  async getCompilerState () {
+    await this.setCompilerMappings()
+    await this.setCompilerConfigContent()
     return this.compiler.state
   }
 
@@ -70,7 +102,25 @@ export class CompileTab extends Plugin {
    * @params lang {'Solidity' | 'Yul'} ...
    */
   setLanguage (lang) {
+    this.language = lang
+    this.api.setCompilerQueryParameters({ language: lang })
     this.compiler.set('language', lang)
+  }
+
+  async setCompilerMappings () {
+    if (await this.api.fileExists('remappings.txt')) {
+      this.api.readFile('remappings.txt').then(remappings => {
+        this.compiler.set('remappings', remappings.split('\n').filter(Boolean))
+      })
+    } else this.compiler.set('remappings', [])
+  }
+
+  async setCompilerConfigContent () {
+    if (this.configFilePath && this.useFileConfiguration) {
+      this.api.readFile(this.configFilePath).then(content => {
+        this.compiler.set('configFileContent', content)
+      })
+    }
   }
 
   /**
@@ -78,53 +128,96 @@ export class CompileTab extends Plugin {
    * @param {string} target the path to the file to compile
    */
   compileFile (target) {
-    if (!target) throw new Error('No target provided for compiliation')
-    const provider = this.api.fileProviderOf(target)
-    if (!provider) throw new Error(`cannot compile ${target}. Does not belong to any explorer`)
+    if (!target) throw new Error('No target provided for compilation')
     return new Promise((resolve, reject) => {
-      provider.get(target, (error, content) => {
-        if (error) return reject(error)
+      this.api.readFile(target).then(async(content) => {
         const sources = { [target]: { content } }
+        this.event.emit('removeAnnotations')
         this.event.emit('startingCompilation')
+        await this.setCompilerMappings()
+        await this.setCompilerConfigContent()
         // setTimeout fix the animation on chrome... (animation triggered by 'staringCompilation')
         setTimeout(() => { this.compiler.compile(sources, target); resolve(true) }, 100)
+      }).catch((error) => {
+        reject(error)
       })
     })
   }
 
   async isHardhatProject () {
-    if (this.api.getFileManagerMode() === 'localhost') {
-      return await this.api.fileExists('hardhat.config.js')
+    if (this.api.getFileManagerMode() === ('localhost') || this.api.isDesktop()) {
+      return await this.api.fileExists('hardhat.config.js') || await this.api.fileExists('hardhat.config.ts')
     } else return false
   }
 
-  runCompiler (hhCompilation) {
+  async isTruffleProject () {
+    if (this.api.getFileManagerMode() === ('localhost') || this.api.isDesktop()) {
+      return await this.api.fileExists('truffle-config.js')
+    } else return false
+  }
+
+  async isFoundryProject () {
+    if (this.api.getFileManagerMode() === ('localhost') || this.api.isDesktop()) {
+      return await this.api.fileExists('foundry.toml')
+    } else return false
+  }
+
+  runCompiler (externalCompType) {
     try {
-      if (this.api.getFileManagerMode() === 'localhost' && hhCompilation) {
-        const { currentVersion, optimize, runs } = this.compiler.state
-        if (currentVersion) {
-          const fileContent = `module.exports = {
-            solidity: '${currentVersion.substring(0, currentVersion.indexOf('+commit'))}',
-            settings: {
-              optimizer: {
-                enabled: ${optimize},
-                runs: ${runs}
+      if (this.api.getFileManagerMode() === 'localhost' || this.api.isDesktop()) {
+        if (externalCompType === 'hardhat') {
+          const { currentVersion, optimize, runs } = this.compiler.state
+          if (currentVersion) {
+            const fileContent = `module.exports = {
+              solidity: '${currentVersion.substring(0, currentVersion.indexOf('+commit'))}',
+              settings: {
+                optimizer: {
+                  enabled: ${optimize},
+                  runs: ${runs}
+                }
               }
             }
+            `
+            const configFilePath = 'remix-compiler.config.js'
+            this.api.writeFile(configFilePath, fileContent)
+            _paq.push(['trackEvent', 'compiler', 'runCompile', 'compileWithHardhat'])
+            this.api.compileWithHardhat(configFilePath).then((result) => {
+              this.api.logToTerminal({ type: 'log', value: result })
+            }).catch((error) => {
+              this.api.logToTerminal({ type: 'error', value: error })
+            })
           }
-          `
-          const configFilePath = 'remix-compiler.config.js'
-          this.api.writeFile(configFilePath, fileContent)
-          this.call('hardhat', 'compile', configFilePath).then((result) => {
-            this.call('terminal', 'log', { type: 'info', value: result })
-          }).catch((error) => {
-            this.call('terminal', 'log', { type: 'error', value: error })
-          })
+        } else if (externalCompType === 'truffle') {
+          const { currentVersion, optimize, runs, evmVersion } = this.compiler.state
+          if (currentVersion) {
+            const fileContent = `module.exports = {
+              compilers: {
+                solc: {
+                  version: '${currentVersion.substring(0, currentVersion.indexOf('+commit'))}',
+                  settings: {
+                    optimizer: {
+                      enabled: ${optimize},
+                      runs: ${runs},
+                    },
+                    evmVersion: ${evmVersion}
+                  }
+                }
+              }
+            }`
+            const configFilePath = 'remix-compiler.config.js'
+            this.api.writeFile(configFilePath, fileContent)
+            _paq.push(['trackEvent', 'compiler', 'runCompile', 'compileWithTruffle'])
+            this.api.compileWithTruffle(configFilePath).then((result) => {
+              this.api.logToTerminal({ type: 'log', value: result })
+            }).catch((error) => {
+              this.api.logToTerminal({ type: 'error', value: error })
+            })
+          }
         }
       }
+      // TODO readd saving current file
       this.api.saveCurrentFile()
-      this.event.emit('removeAnnotations')
-      var currentFile = this.api.getConfiguration('currentFile')
+      const currentFile = this.api.currentFile
       return this.compileFile(currentFile)
     } catch (err) {
       console.error(err)

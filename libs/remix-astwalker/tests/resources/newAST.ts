@@ -1,7 +1,5 @@
 import { Node } from '../../src/'
-let node: Node;
-
-node = {
+const node: Node = {
   "ast":
   {
     "absolutePath": "greeter.sol",
@@ -292,7 +290,6 @@ node = {
     "src": "0:412:0"
   }
 }
-
 
 node.source = `contract test {
     int x;

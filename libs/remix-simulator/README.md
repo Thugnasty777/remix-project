@@ -5,12 +5,12 @@
 [![GitHub](https://img.shields.io/github/license/mashape/apistatus.svg)](https://github.com/ethereum/remix-project/tree/master/libs/remix-simulator)
 [![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/ethereum/remix-project/issues)
 
-`@remix-project/remix-simulator` is a web3 wrapper for different kind of providers. It is used in `remix-tests` library and in Remix IDE codebase.
+`@remix-project/remix-simulator` is a web3 wrapper for different kinds of providers. It is used in `remix-tests` library and in Remix IDE codebase.
 
 ### Installation
 `@remix-project/remix-simulator` is an NPM package and can be installed using NPM as:
 
-`npm install @remix-project/remix-simulator`
+`yarn add @remix-project/remix-simulator`
 
 ### How to use
 
@@ -39,7 +39,7 @@
 * [X] eth_getCode
 * [~] eth_sign
 * [X] eth_sendTransaction
-* [_] eth_sendRawTransaction
+* [x] eth_sendRawTransaction
 * [X] eth_call
 * [~] eth_estimateGas
 * [X] eth_getBlockByHash
@@ -86,7 +86,7 @@
 
 Please feel free to open an issue or a pull request. 
 
-In case you want to add some code, do have a look to our contribution guidelnes [here](https://github.com/ethereum/remix-project/blob/master/CONTRIBUTING.md). Reach us on [Gitter](https://gitter.im/ethereum/remix) in case of any queries.
+In case you want to add some code, do have a look at our contribution guidelines [here](https://github.com/ethereum/remix-project/blob/master/CONTRIBUTING.md). Reach us on [Gitter](https://gitter.im/ethereum/remix) in case of any queries.
 
 ### License
 MIT © 2018-21 Remix Team

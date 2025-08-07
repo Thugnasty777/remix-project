@@ -1,5 +1,5 @@
 'use strict'
-import { ethers } from 'ethers'
+import { EventFragment, Interface } from 'ethers'
 import { visitContracts } from './txHelper'
 
 /**
@@ -21,7 +21,7 @@ export class EventsDecoder {
   * @param {Function} cb - callback
   */
   parseLogs (tx, contractName, compiledContracts, cb) {
-    if (tx.isCall) return cb(null, { decoded: [], raw: [] })
+    if (tx.isCall) return cb(null, { decoded: [], raw: []})
     this.resolveReceipt(tx, (error, receipt) => {
       if (error) return cb(error)
       this._decodeLogs(tx, receipt, contractName, compiledContracts, cb)
@@ -33,17 +33,18 @@ export class EventsDecoder {
       return cb('cannot decode logs - contract or receipt not resolved ')
     }
     if (!receipt.logs) {
-      return cb(null, { decoded: [], raw: [] })
+      return cb(null, { decoded: [], raw: []})
     }
     this._decodeEvents(tx, receipt.logs, contract, contracts, cb)
   }
 
   _eventABI (contract): Record<string, { event, inputs, object, abi }> {
     const eventABI: Record<string, { event, inputs, object, abi }> = {}
-    const abi = new ethers.utils.Interface(contract.abi)
-    for (const e in abi.events) {
-      const event = abi.getEvent(e)
-      eventABI[abi.getEventTopic(e).replace('0x', '')] = { event: event.name, inputs: event.inputs, object: event, abi: abi }
+    const abi = new Interface(contract.abi)
+    const eventFragments = abi.fragments.filter(f => f.type === "event") as Array<EventFragment>
+    for (const e of eventFragments) {
+      const event = abi.getEvent(e.name)
+      eventABI[e.topicHash.replace('0x', '')] = { event: event.name, inputs: event.inputs, object: event, abi: abi }
     }
     return eventABI
   }
@@ -57,6 +58,8 @@ export class EventsDecoder {
   }
 
   _event (hash, eventsABI) {
+    // get all the events responding to that hash.
+    const contracts = []
     for (const k in eventsABI) {
       if (eventsABI[k][hash]) {
         const event = eventsABI[k][hash]
@@ -66,10 +69,10 @@ export class EventsDecoder {
             input.baseType = 'bytes24'
           }
         }
-        return event
+        contracts.push(event)
       }
     }
-    return null
+    return contracts
   }
 
   _stringifyBigNumber (value): string {
@@ -94,16 +97,23 @@ export class EventsDecoder {
       // [address, topics, mem]
       const log = logs[i]
       const topicId = log.topics[0]
-      const eventAbi = this._event(topicId.replace('0x', ''), eventsABI)
-      if (eventAbi) {
-        const decodedlog = eventAbi.abi.parseLog(log)
-        const decoded = {}
-        for (const v in decodedlog.args) {
-          decoded[v] = this._stringifyEvent(decodedlog.args[v])
+      const eventAbis = this._event(topicId.replace('0x', ''), eventsABI)
+      for (const eventAbi of eventAbis) {
+        try {
+          if (eventAbi) {
+            const decodedlog = eventAbi.abi.parseLog(log)
+            const decoded = {}
+            for (const v in decodedlog.args) {
+              decoded[v] = this._stringifyEvent(decodedlog.args[v])
+            }
+            events.push({ from: log.address, topic: topicId, event: eventAbi.event, args: decoded })
+          } else {
+            events.push({ from: log.address, data: log.data, topics: log.topics })
+          }
+          break // if one of the iteration is successful
+        } catch (e) {
+          continue
         }
-        events.push({ from: log.address, topic: topicId, event: eventAbi.event, args: decoded })
-      } else {
-        events.push({ from: log.address, data: log.data, topics: log.topics })
       }
     }
     cb(null, { decoded: events, raw: logs })

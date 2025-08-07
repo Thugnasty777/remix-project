@@ -38,7 +38,7 @@ const testFiles: string[] = [
   'forLoopIteratesOverDynamicArray.sol'
 ]
 
-let compilationResults: Record<string, CompilationResult> = {}
+const compilationResults: Record<string, CompilationResult> = {}
 
 test('setup', function (t) {
   solc.loadRemoteVersion('v0.5.0+commit.1d4f565a', (error, compiler) => {
@@ -52,9 +52,6 @@ test('setup', function (t) {
     t.end()
   })
 });
-
-
-
 
 test('Integration test thisLocal module', function (t: test.Test) {
   t.plan(testFiles.length)
@@ -816,12 +813,11 @@ test('Integration test forLoopIteratesOverDynamicArray module', function (t: tes
 function runModuleOnFiles (Module: any, t: test.Test, cb: ((fname: string, report: AnalysisReportObj[]) => void)): void {
   const statRunner: StatRunner = new StatRunner()
   testFiles.forEach((fileName: string) => {
-    statRunner.runWithModuleList(compilationResults[fileName], [{ name: new Module().name, mod: new Module() }], (reports: AnalysisReport[]) => {
-      let report: AnalysisReportObj[] = reports[0].report
-      if (report.some((x: AnalysisReportObj) => x['warning'].includes('INTERNAL ERROR'))) {
-        t.comment('Error while executing Module: ' + JSON.stringify(report))
-      }
-      cb(fileName, report)
-    })
+    const reports = statRunner.runWithModuleList(compilationResults[fileName], [{ name: new Module().name, mod: new Module() }])
+    const report: AnalysisReportObj[] = reports[0].report
+    if (report.some((x: AnalysisReportObj) => x['warning'].includes('INTERNAL ERROR'))) {
+      t.comment('Error while executing Module: ' + JSON.stringify(report))
+    }
+    cb(fileName, report)
   })
 }

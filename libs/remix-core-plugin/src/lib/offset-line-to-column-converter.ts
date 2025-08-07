@@ -11,11 +11,13 @@ const profile = {
 }
 
 export class OffsetToLineColumnConverter extends Plugin {
-  lineBreakPositionsByContent: {}
+  lineBreakPositionsByContent: Record<number, Array<number>>
   sourceMappingDecoder: any
+  offsetConversion: any
   constructor () {
     super(profile)
     this.lineBreakPositionsByContent = {}
+    this.offsetConversion = {}
     this.sourceMappingDecoder = sourceMappingDecoder
   }
 
@@ -36,7 +38,7 @@ export class OffsetToLineColumnConverter extends Plugin {
         // if we don't have ast, we process the only one available content (applicable also for compiler older than 0.4.12)
         this.lineBreakPositionsByContent[file] = this.sourceMappingDecoder.getLinebreakPositions(sources[sourcesArray[0]].content)
       } else {
-        for (var filename in asts) {
+        for (const filename in asts) {
           const source = asts[filename]
           if (source.id === file) {
             this.lineBreakPositionsByContent[file] = this.sourceMappingDecoder.getLinebreakPositions(sources[filename].content)
@@ -45,7 +47,15 @@ export class OffsetToLineColumnConverter extends Plugin {
         }
       }
     }
-    return this.sourceMappingDecoder.convertOffsetToLineColumn(rawLocation, this.lineBreakPositionsByContent[file])
+
+    const token = `${rawLocation.start}:${rawLocation.length}:${file}`
+    if (this.offsetConversion[token]) {
+      return this.offsetConversion[token]
+    } else {
+      const conversion = this.sourceMappingDecoder.convertOffsetToLineColumn(rawLocation, this.lineBreakPositionsByContent[file])
+      this.offsetConversion[token] = conversion
+      return conversion
+    }
   }
 
   /**
@@ -64,13 +74,14 @@ export class OffsetToLineColumnConverter extends Plugin {
    */
   clear () {
     this.lineBreakPositionsByContent = {}
+    this.offsetConversion = {}
   }
 
   /**
    * called by plugin API
    */
   activate () {
-    this.on('solidity', 'compilationFinished', () => {
+    this.on('solidity', 'compilationFinished', (success, data, source, input, version) => {
       this.clear()
     })
   }

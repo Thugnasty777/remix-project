@@ -1,5 +1,6 @@
 import { eachOf } from 'async'
 import { randomBytes } from 'crypto'
+import { toChecksumAddress, bytesToHex } from '@ethereumjs/util'
 
 export class LogsManager {
   notificationCallbacks
@@ -17,20 +18,19 @@ export class LogsManager {
   }
 
   checkBlock (blockNumber, block, web3) {
-    eachOf(block.transactions, (tx, i, next) => {
-      const txHash = '0x' + tx.hash().toString('hex')
-
+    eachOf(block.transactions, (tx: any, i, next) => {
+      const txHash = bytesToHex(tx.hash())
       web3.eth.getTransactionReceipt(txHash, (_error, receipt) => {
+        if (!receipt) return next()
         for (const log of receipt.logs) {
-          this.oldLogs.push({ type: 'block', blockNumber, block, tx, log, txNumber: i })
-          const subscriptions = this.getSubscriptionsFor({ type: 'block', blockNumber, block, tx, log })
-
+          this.oldLogs.push({ type: 'block', blockNumber, block, tx, log, txNumber: i, receipt })
+          const subscriptions = this.getSubscriptionsFor({ type: 'block', blockNumber, block, tx, log, receipt })
           for (const subscriptionId of subscriptions) {
             const result = {
               logIndex: '0x1', // 1
               blockNumber: blockNumber,
-              blockHash: ('0x' + block.hash().toString('hex')),
-              transactionHash: ('0x' + tx.hash().toString('hex')),
+              blockHash: bytesToHex(block.hash()),
+              transactionHash: bytesToHex(tx.hash()),
               transactionIndex: '0x' + i.toString(16),
               // TODO: if it's a contract deploy, it should be that address instead
               address: log.address,
@@ -52,18 +52,35 @@ export class LogsManager {
   }
 
   eventMatchesFilter (changeEvent, queryType, queryFilter) {
-    if (queryFilter.topics.filter((logTopic) => changeEvent.log.topics.indexOf(logTopic) >= 0).length === 0) return false
+    // topics should match
+    let noMatch = false
+    for (let i = 0; i < queryFilter.topics.length; i++) {
+      if (!queryFilter.topics[i]) {
+        continue // if the topic isn't defined, we consider it a match.
+      }
+      if (Array.isArray(queryFilter.topics[i])) {
+        if (queryFilter.topics[i].indexOf(changeEvent.log.topics[i]) === -1) {
+          noMatch = true
+        }
+        continue
+      }
+      if (queryFilter.topics[i] !== changeEvent.log.topics[i]) noMatch = true
+    }
+    if (noMatch) return false
 
     if (queryType === 'logs') {
-      if ((queryFilter.address === ('0x' + changeEvent.tx.to.toString('hex'))) && (queryFilter.address === ('0x' + changeEvent.tx.from.toString('hex')))) {
-        if (!queryFilter.toBlock) {
-          return true
-        } else if (parseInt(queryFilter.toBlock) > parseInt(changeEvent.blockNumber)) {
+      const fromBlock = parseInt(queryFilter.fromBlock || '0x0')
+      let toBlock
+      if (queryFilter.toBlock === 'latest' || !queryFilter.toBlock) toBlock = Number.MAX_VALUE
+      else toBlock = parseInt(queryFilter.toBlock)
+      const targetAddress = toChecksumAddress(queryFilter.address)
+      if ((toBlock >= parseInt(changeEvent.blockNumber)) && (fromBlock <= parseInt(changeEvent.blockNumber))) {
+        if (changeEvent.log && changeEvent.log.address === targetAddress) {
           return true
         }
       }
+      return false
     }
-
     return false
   }
 
@@ -73,7 +90,7 @@ export class LogsManager {
       const subscriptionParams = this.subscriptions[subscriptionId]
       const [queryType, queryFilter] = subscriptionParams
 
-      if (this.eventMatchesFilter(changeEvent, queryType, queryFilter || { topics: [] })) {
+      if (this.eventMatchesFilter(changeEvent, queryType, queryFilter || { topics: []})) {
         matchedSubscriptions.push(subscriptionId)
       }
     }
@@ -132,16 +149,33 @@ export class LogsManager {
     const tracking = this.filterTracking[filterId]
 
     if (logsOnly || filterType === 'filter') {
-      return this.getLogsFor(params || { topics: [] })
+      return this.getLogsFor(params || { topics: []})
     }
     if (filterType === 'block') {
       const blocks = this.oldLogs.filter(x => x.type === 'block').filter(x => tracking.block === undefined || x.blockNumber >= tracking.block)
       tracking.block = blocks[blocks.length - 1]
-      return blocks.map(block => ('0x' + block.hash().toString('hex')))
+      return blocks.map(block => bytesToHex(block.hash()))
     }
     if (filterType === 'pendingTransactions') {
       return []
     }
+  }
+
+  getLogsByTxHash (hash) {
+    return this.oldLogs.filter((log) => bytesToHex(log.tx.hash()) === hash)
+      .map((log) => {
+        return {
+          logIndex: '0x1', // 1
+          blockNumber: log.blockNumber,
+          blockHash: bytesToHex(log.block.hash()),
+          transactionHash: bytesToHex(log.tx.hash()),
+          transactionIndex: '0x' + log.txNumber.toString(16),
+          // TODO: if it's a contract deploy, it should be that address instead
+          address: log.log.address,
+          data: log.log.data,
+          topics: log.log.topics
+        }
+      })
   }
 
   getLogsFor (params) {
@@ -151,8 +185,8 @@ export class LogsManager {
         results.push({
           logIndex: '0x1', // 1
           blockNumber: log.blockNumber,
-          blockHash: ('0x' + log.block.hash().toString('hex')),
-          transactionHash: ('0x' + log.tx.hash().toString('hex')),
+          blockHash: bytesToHex(log.block.hash()),
+          transactionHash: bytesToHex(log.tx.hash()),
           transactionIndex: '0x' + log.txNumber.toString(16),
           // TODO: if it's a contract deploy, it should be that address instead
           address: log.log.address,

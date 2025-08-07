@@ -23,6 +23,8 @@ module.exports = {
         console.log('signature', signature)
         browser.assert.ok(typeof hash.value === 'string', 'type of hash.value must be String')
         browser.assert.ok(typeof signature.value === 'string', 'type of signature.value must be String')
+        // we check here that the input is strictly "test message"
+        browser.assert.equal(signature.value, '0xaa8873317ebf3f34fbcc0eab3e9808d851352674c28a3d6b88dc84db6e10fc183a45bcec983a105964a13b54f18e43eceae29d982bf379826fb7ecfe0d42c6ba1b', 'signature should be tied to the input "test message"')
       })
       .addFile('signMassage.sol', sources[0]['signMassage.sol'])
       .openFile('signMassage.sol')
@@ -49,7 +51,24 @@ module.exports = {
             })
         })
       })
-      .end()
+  },
+
+  'Test EIP 712 Signature': function (browser: NightwatchBrowser) {
+    browser.waitForElementPresent('i[id="remixRunSignMsg"]')
+      .click('i[id="remixRunSignMsg"]')
+      .waitForElementVisible('*[data-id="signMessageTextarea"]', 120000)
+      .click('*[data-id="sign-eip-712"]')
+      .waitForElementVisible('*[data-id="udappNotify-modal-footer-ok-react"]')
+      .modalFooterOKClick('udappNotify')
+      .pause(1000)
+      .getEditorValue((content) => {
+        browser.assert.ok(content.indexOf('"primaryType": "AuthRequest",') !== -1, 'EIP 712 data file must be opened')
+      })
+      .clickLaunchIcon('filePanel')
+      .rightClick('li[data-id="treeViewLitreeViewItemEIP-712-data.json"]')
+      .click('*[data-id="contextMenuItemsignTypedData"]')
+      .pause(1000)
+      .journalChildIncludes('0x8be3a81e17b7e4a40006864a4ff6bfa3fb1e18b292b6f47edec95cd8feaa53275b90f56ca02669d461a297e6bf94ab0ee4b7c89aede3228ed5aedb59c7e007501c')
   }
 }
 

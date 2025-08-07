@@ -4,15 +4,27 @@ import { compile } from 'solc'
 import * as stateDecoder from '../../src/solidity-decoder/stateDecoder'
 import { MockStorageResolver } from './mockStorageResolver'
 import { compilerInput } from '../helpers/compilerHelper'
-var testMappingStorage = require('./stateTests/mapping')
+const testMappingStorage = require('./stateTests/mapping')
+const testRevertState = require('./stateTests/revert-state')
+const testRevertStateSubCall = require('./stateTests/revert-state-sub-call')
 
 tape('solidity', function (t) {
   t.test('storage decoder', function (st) {
+    console.log('test int storage')
     testIntStorage(st, function () {
+      console.log('test byte storage')
       testByteStorage(st, function () {
+        console.log('test struct storage')
         testStructArrayStorage(st, function () {
+          console.log('test mapping storage')
           testMappingStorage(st, function () {
-            st.end()
+            console.log('test revert state')
+            testRevertState(st, function () {
+              console.log('test revert state sub call')
+              testRevertStateSubCall(st, function () {
+                st.end()
+              })
+            })
           })
         })
       })
@@ -21,11 +33,11 @@ tape('solidity', function (t) {
 })
 
 function testIntStorage (st, cb) {
-  var intStorage = require('./contracts/intStorage')
-  var output = compile(compilerInput(intStorage.contract))
+  const intStorage = require('./contracts/intStorage')
+  let output = compile(compilerInput(intStorage.contract))
   output = JSON.parse(output)
-  var mockStorageResolver
-  for (var storage of [intStorage.fullStorage, shrinkStorage(intStorage.fullStorage)]) {
+  let mockStorageResolver
+  for (const storage of [intStorage.fullStorage, shrinkStorage(intStorage.fullStorage)]) {
     mockStorageResolver = new MockStorageResolver(storage)
     stateDecoder.solidityState(mockStorageResolver, output.sources, 'intStorage').then((decoded) => {
       st.equal(decoded['ui8'].value, '130')
@@ -68,11 +80,11 @@ function testIntStorage (st, cb) {
 }
 
 function testByteStorage (st, cb) {
-  var byteStorage = require('./contracts/byteStorage')
-  var output = compile(compilerInput(byteStorage.contract))
+  const byteStorage = require('./contracts/byteStorage')
+  let output = compile(compilerInput(byteStorage.contract))
   output = JSON.parse(output)
-  var mockStorageResolver
-  for (var storage of [byteStorage.storage, shrinkStorage(byteStorage.storage)]) {
+  let mockStorageResolver
+  for (const storage of [byteStorage.storage, shrinkStorage(byteStorage.storage)]) {
     mockStorageResolver = new MockStorageResolver(storage)
     stateDecoder.solidityState(mockStorageResolver, output.sources, 'byteStorage').then((decoded) => {
       st.equal(decoded['b1'].value, false)
@@ -171,20 +183,20 @@ function testByteStorage (st, cb) {
 }
 
 function shrinkStorage (storage) {
-  var shrinkedStorage = {}
-  var regex = /0x(00)*(..)/
-  for (var key in storage) {
-    var value = storage[key]
+  const shrinkedStorage = {}
+  const regex = /0x(00)*(..)/
+  for (const key in storage) {
+    const value = storage[key]
     shrinkedStorage[key.replace(regex, '0x$2')] = value.replace(regex, '0x$2')
   }
   return shrinkedStorage
 }
 
 function testStructArrayStorage (st, cb) {
-  var structArrayStorage = require('./contracts/structArrayStorage')
-  var output = compile(compilerInput(structArrayStorage.contract))
+  const structArrayStorage = require('./contracts/structArrayStorage')
+  let output = compile(compilerInput(structArrayStorage.contract))
   output = JSON.parse(output)
-  var mockStorageResolver = new MockStorageResolver(structArrayStorage.storage)
+  const mockStorageResolver = new MockStorageResolver(structArrayStorage.storage)
   stateDecoder.solidityState(mockStorageResolver, output.sources, 'structArrayStorage').then((decoded) => {
     st.equal(decoded['intStructDec'].value['i8'].value, '32')
     st.equal(decoded['intStructDec'].value['i16'].value, '-54')

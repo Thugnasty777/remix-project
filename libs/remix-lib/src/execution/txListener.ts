@@ -1,9 +1,8 @@
 'use strict'
-import { each } from 'async'
-import { ethers } from 'ethers'
-import { toBuffer, addHexPrefix } from 'ethereumjs-util'
+import { AbiCoder } from 'ethers'
+import { toBytes, addHexPrefix } from '@ethereumjs/util'
 import { EventManager } from '../eventManager'
-import { compareByteCode } from '../util'
+import { compareByteCode, getinputParameters } from '../util'
 import { decodeResponse } from './txFormat'
 import { getFunction, getReceiveInterface, getConstructorInterface, visitContracts, makeFullTypeDefinition } from './txHelper'
 
@@ -11,7 +10,7 @@ function addExecutionCosts (txResult, tx, execResult) {
   if (txResult) {
     if (execResult) {
       tx.returnValue = execResult.returnValue
-      if (execResult.gasUsed) tx.executionCost = execResult.gasUsed.toString(10)
+      if (execResult.executionGasUsed) tx.executionCost = execResult.executionGasUsed.toString(10)
     }
     if (txResult.receipt && txResult.receipt.gasUsed) tx.transactionCost = txResult.receipt.gasUsed.toString(10)
   }
@@ -34,11 +33,10 @@ export class TxListener {
   _listenOnNetwork:boolean
   _loopId
   blocks
-  lastBlock
 
   constructor (opt, executionContext) {
     this.event = new EventManager()
-    // has a default for now for backwards compatability
+    // has a default for now for backwards compatibility
     this.executionContext = executionContext
     this._api = opt.api
     this._resolvedTransactions = {}
@@ -60,15 +58,15 @@ export class TxListener {
       // in VM mode
       // in web3 mode && listen remix txs only
       if (!this._isListening) return // we don't listen
-      if (this._loopId && this.executionContext.getProvider() !== 'vm') return // we seems to already listen on a "web3" network
+      if (this._loopId) return // we seems to already listen on a "web3" network
 
       let returnValue
       let execResult
       if (this.executionContext.isVM()) {
-        execResult = await this.executionContext.web3().eth.getExecutionResultFromSimulator(txResult.transactionHash)
-        returnValue = execResult.returnValue
+        execResult = await this.executionContext.web3().remix.getExecutionResultFromSimulator(txResult.transactionHash)
+        returnValue = toBytes(execResult.returnValue)
       } else {
-        returnValue = toBuffer(addHexPrefix(txResult.result))
+        returnValue = toBytes(addHexPrefix(txResult.result))
       }
       const call = {
         from: from,
@@ -95,21 +93,20 @@ export class TxListener {
       // in VM mode
       // in web3 mode && listen remix txs only
       if (!this._isListening) return // we don't listen
-      if (this._loopId && this.executionContext.getProvider() !== 'vm') return // we seems to already listen on a "web3" network
-      this.executionContext.web3().eth.getTransaction(txResult.transactionHash, async (error, tx) => {
-        if (error) return console.log(error)
-
+      if (this._loopId) return // we seems to already listen on a "web3" network
+      this.executionContext.web3().eth.getTransaction(txResult.transactionHash).then(async tx=>{
         let execResult
         if (this.executionContext.isVM()) {
-          execResult = await this.executionContext.web3().eth.getExecutionResultFromSimulator(txResult.transactionHash)
+          execResult = await this.executionContext.web3().remix.getExecutionResultFromSimulator(txResult.transactionHash)
         }
 
         addExecutionCosts(txResult, tx, execResult)
         tx.envMode = this.executionContext.getProvider()
-        tx.status = txResult.receipt.status // 0x0 or 0x1
-        this._resolve([tx], () => {
-        })
-      })
+        tx.status = txResult.receipt.status
+        tx.isUserOp = txResult.tx.isUserOp
+        tx.originTo = txResult.tx.originTo
+        this._resolve([tx])
+      }).catch(error=>console.log(error))
     })
   }
 
@@ -123,9 +120,7 @@ export class TxListener {
     if (this._loopId) {
       clearInterval(this._loopId)
     }
-    if (this._listenOnNetwork) {
-      this._startListenOnNetwork()
-    }
+    this._listenOnNetwork ? this.startListening() : this.stopListening()
   }
 
   /**
@@ -133,7 +128,6 @@ export class TxListener {
     */
   init () {
     this.blocks = []
-    this.lastBlock = null
   }
 
   /**
@@ -145,7 +139,7 @@ export class TxListener {
   startListening () {
     this.init()
     this._isListening = true
-    if (this._listenOnNetwork && this.executionContext.getProvider() !== 'vm') {
+    if (this._listenOnNetwork && !this.executionContext.isVM()) {
       this._startListenOnNetwork()
     }
   }
@@ -164,35 +158,54 @@ export class TxListener {
     this._isListening = false
   }
 
-  _startListenOnNetwork () {
-    this._loopId = setInterval(() => {
+  async _startListenOnNetwork () {
+    let lastSeenBlock = this.executionContext.lastBlock?.number - BigInt(1)
+    let processingBlock = false
+
+    const processBlocks = async () => {
+      if (!this._isListening) return
+      if (processingBlock) return
+      processingBlock = true
       const currentLoopId = this._loopId
-      this.executionContext.web3().eth.getBlockNumber((error, blockNumber) => {
-        if (this._loopId === null) return
-        if (error) return console.log(error)
-        if (currentLoopId === this._loopId && (!this.lastBlock || blockNumber > this.lastBlock)) {
-          if (!this.lastBlock) this.lastBlock = blockNumber - 1
-          let current = this.lastBlock + 1
-          this.lastBlock = blockNumber
-          while (blockNumber >= current) {
-            try {
-              this._manageBlock(current)
-            } catch (e) {
-              console.log(e)
-            }
-            current++
+      if (this._loopId === null) {
+        processingBlock = false
+        return
+      }
+      if (!lastSeenBlock) {
+        lastSeenBlock = this.executionContext.lastBlock?.number // trying to resynchronize
+        console.log('listen on blocks, resynchronising')
+        processingBlock = false
+        return
+      }
+      const current = this.executionContext.lastBlock?.number
+      if (!current) {
+        console.log(new Error('no last block found'))
+        processingBlock = false
+        return
+      }
+      if (currentLoopId === this._loopId && lastSeenBlock < current) {
+        while (lastSeenBlock <= current) {
+          try {
+            if (!this._isListening) break
+            await this._manageBlock(lastSeenBlock)
+          } catch (e) {
+            console.log(e)
           }
+          lastSeenBlock++
         }
-      })
-    }, 2000)
+        lastSeenBlock = current
+      }
+      processingBlock = false
+    }
+    this._loopId = setInterval(processBlocks, 20000)
+    processBlocks()
   }
 
-  _manageBlock (blockNumber) {
-    this.executionContext.web3().eth.getBlock(blockNumber, true, (error, result) => {
-      if (!error) {
-        this._newBlock(Object.assign({ type: 'web3' }, result))
-      }
-    })
+  async _manageBlock (blockNumber) {
+    try {
+      const result = await this.executionContext.web3().eth.getBlock(blockNumber, true)
+      return await this._newBlock(Object.assign({ type: 'web3' }, result))
+    } catch (e) {}
   }
 
   /**
@@ -216,29 +229,35 @@ export class TxListener {
     return this._resolvedTransactions[txHash]
   }
 
-  _newBlock (block) {
+  async _newBlock (block) {
     this.blocks.push(block)
-    this._resolve(block.transactions, () => {
-      this.event.trigger('newBlock', [block])
-    })
+    await this._resolve(block.transactions)
+    this.event.trigger('newBlock', [block])
   }
 
-  _resolve (transactions, callback) {
-    each(transactions, (tx, cb) => {
+  _resolveAsync (tx) {
+    return new Promise((resolve, reject) => {
       this._api.resolveReceipt(tx, (error, receipt) => {
-        if (error) return cb(error)
+        if (error) return reject(error)
         this._resolveTx(tx, receipt, (error, resolvedData) => {
-          if (error) cb(error)
+          if (error) return reject(error)
           if (resolvedData) {
             this.event.trigger('txResolved', [tx, receipt, resolvedData])
           }
           this.event.trigger('newTransaction', [tx, receipt])
-          cb()
+          resolve({})
         })
       })
-    }, () => {
-      callback()
     })
+  }
+
+  async _resolve (transactions) {
+    for (const tx of transactions) {
+      try {
+        if (!this._isListening) break
+        await this._resolveAsync(tx)
+      } catch (e) {}
+    }
   }
 
   _resolveTx (tx, receipt, cb) {
@@ -266,8 +285,7 @@ export class TxListener {
       // first check known contract, resolve against the `runtimeBytecode` if not known
       contract = this._resolvedContracts[tx.to]
       if (!contract) {
-        this.executionContext.web3().eth.getCode(tx.to, (error, code) => {
-          if (error) return cb(error)
+        this.executionContext.web3().eth.getCode(tx.to).then(code=>{
           if (code) {
             const contract = this._tryResolveContract(code, contracts, false)
             if (contract) {
@@ -277,7 +295,7 @@ export class TxListener {
             }
           }
           return cb()
-        })
+        }).catch(error=>cb(error))
         return
       }
       if (contract) {
@@ -333,7 +351,7 @@ export class TxListener {
       const bytecode = contract.object.evm.bytecode.object
       let params = null
       if (bytecode && bytecode.length) {
-        params = this._decodeInputParams(inputData.substring(bytecode.length), getConstructorInterface(abi))
+        params = this._decodeInputParams(getinputParameters(inputData), getConstructorInterface(abi))
       }
       this._resolvedTransactions[tx.hash] = {
         contractName: contract.name,
@@ -358,18 +376,18 @@ export class TxListener {
   }
 
   _decodeInputParams (data, abi) {
-    data = toBuffer(addHexPrefix(data))
-    if (!data.length) data = new Uint8Array(32 * abi.inputs.length) // ensuring the data is at least filled by 0 cause `AbiCoder` throws if there's not engouh data
+    data = toBytes(addHexPrefix(data))
+    if (!data.length) data = new Uint8Array(32 * abi.inputs.length) // ensuring the data is at least filled by 0 cause `AbiCoder` throws if there's not enough data
 
     const inputTypes = []
     for (let i = 0; i < abi.inputs.length; i++) {
       const type = abi.inputs[i].type
       inputTypes.push(type.indexOf('tuple') === 0 ? makeFullTypeDefinition(abi.inputs[i]) : type)
     }
-    const abiCoder = new ethers.utils.AbiCoder()
+    const abiCoder = new AbiCoder()
     const decoded = abiCoder.decode(inputTypes, data)
     const ret = {}
-    for (var k in abi.inputs) {
+    for (const k in abi.inputs) {
       ret[abi.inputs[k].type + ' ' + abi.inputs[k].name] = decoded[k]
     }
     return ret

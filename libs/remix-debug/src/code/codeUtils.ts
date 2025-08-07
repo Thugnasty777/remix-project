@@ -1,11 +1,12 @@
 'use strict'
-import Common from '@ethereumjs/common'
-import { getOpcodesForHF } from '@ethereumjs/vm/dist/evm/opcodes'
+import { util } from '@remix-project/remix-lib'
+import { Common, Mainnet } from '@ethereumjs/common'
+import { getOpcodesForHF, paramsEVM } from '@ethereumjs/evm'
 import getOpcodes from './opcodes'
 
 export function nameOpCodes (raw, hardfork) {
-  const common = new Common({ chain: 'mainnet', hardfork })
-  const opcodes = getOpcodesForHF(common)
+  const common = new Common({ chain: Mainnet, hardfork, params: paramsEVM })
+  const opcodes = getOpcodesForHF(common).opcodes
 
   let pushData = ''
   const codeMap = {}
@@ -26,17 +27,18 @@ export function nameOpCodes (raw, hardfork) {
       pushData = raw.slice(pc + 1, pc + jumpNum + 1)
       i += jumpNum
     }
+    const hexCode = pushData ? util.bytesToHex((pushData as any)) : ''
+    // @ts-ignore
+    const data = hexCode !== '' ? ' ' + hexCode : ''
 
-    const data = (pushData as any).toString('hex') !== '' ? ' ' + (pushData as any).toString('hex') : ''
-
-    code.push(this.pad(pc, this.roundLog(raw.length, 10)) + ' ' + curOpCode + data)
+    code.push(pad(pc, roundLog(raw.length, 10)) + ' ' + curOpCode + data)
     pushData = ''
   }
   return [code, codeMap]
 }
 
 type Opcode = {
-  name: String,
+  name: string,
   pushData?: Array<number>
   in?: number
   out?: number
@@ -46,8 +48,8 @@ type Opcode = {
  * information about the opcode.
  */
 export function parseCode (raw) {
-  const common = new Common({ chain: 'mainnet', hardfork: 'london' })
-  const opcodes = getOpcodesForHF(common)
+  const common = new Common({ chain: Mainnet, hardfork: 'prague', params: paramsEVM })
+  const opcodes = getOpcodesForHF(common).opcodes
 
   const code = []
   for (let i = 0; i < raw.length; i++) {

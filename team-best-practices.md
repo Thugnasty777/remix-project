@@ -1,31 +1,26 @@
 
 # Team best practices
 
-This document aims to address contibutors best practices of the following repositories:
- - remix-ide https://github.com/ethereum/remix-ide
- - remix https://github.com/ethereum/remix
- - remixd https://github.com/ethereum/remixd
+This document aims to address contributors best practices of the following repositories:
+ - Remix Project: https://github.com/ethereum/remix-project
+ - Remix Libraries: https://github.com/ethereum/remix-project/tree/master/libs
 
-This document is not in its final version, **a team meeting which aim to address new/old best practices, feedback, workflows, all kind of issues related to how the team work together occurs every 2 weeks.**
-This document link to other specialised best practices (like coding best practices).
+This document is not in its final version, **a team meeting which aims to address new/old best practices, feedback, workflows, all kind of issues related to how the team works together occurs every 2 weeks.**
+This document link to other specialized best practices (like coding best practices).
 
 Related links:
- - Public WebSite: https://remix-project.org
+ - Public Website: https://remix-project.org
  - Awesome Remix: https://github.com/ethereum/awesome-remix
  - Remix basic FAQ: https://hackmd.io/KVooMJhWRImCGq6zkDgW9A
  - Remix live: https://remix.ethereum.org
  - Remix alpha live: https://remix-alpha.ethereum.org
  - Remix beta live: https://remix-beta.ethereum.org
  - Remix-lib NPM module: https://www.npmjs.com/package/@remix-project/remix-lib
- - Remix-tests NPM module: https://www.npmjs.com/package/@remix-project/remix-test
  - Remix-solidity NPM module: https://www.npmjs.com/package/@remix-project/remix-solidity
  - Remix-debug NPM module: https://www.npmjs.com/package/@remix-project/remix-debug
  - Remix-tests NPM module: https://www.npmjs.com/package/@remix-project/remix-tests
  - Remix documentation: http://remix-ide.readthedocs.io/en/latest/
- - General gitter channel: https://gitter.im/ethereum/remix
- - Dev gitter channel: https://gitter.im/ethereum/remix-dev
- - Dev plugin gitter channel: https://gitter.im/ethereum/remix-dev-plugin
- 
+ - Discord: https://discord.gg/ATKsctCS2F
  
 ---
 
@@ -43,19 +38,19 @@ Related links:
 
  - A milestone standup - scheduled before the beginning of each milestone, roughly on a monthly basis - which aim to define what will be included in the **next milestone** and who will work on what. This standup also help to set a clear long term vision.
  
- - A retrospective standup - after each releases - which aim to talk about **best practices in general**: what is good, what is bad, how we can improve workflows.
+ - A retrospective standup - after each release - which aims to talk about **best practices in general**: what is good, what is bad, how we can improve workflows.
 
  - A tour standup - Just after a release or whenever it is needed - which aim to demo, **explain in details** features, bug fixes or any part of the codebase.
  
  
  ### 2) Group meetings:
  
- - When a story / bug fix is divided in parts, there should be a kickstart meeting with all the developers involved, so that all the devs have an good overview / understanding on:
+ - When a story / bug fix is divided in parts, there should be a kickstart meeting with all the developers involved, so that all the devs have a good overview / understanding on:
      - How the story fits into the Ethereum tech.
      - How the backend (if any) works / will work (could be a smart contract).
      - How the frontend works / will work.
      - What is the general vision of the UX design for this particular story.
-     Later progress and discussion is updated directly on the issue or pull request (Github).
+     Later progress and discussion is updated directly on the issue or pull request (GitHub).
  
 ---
 
@@ -73,9 +68,9 @@ Before starting coding, we should ensure all devs / contributors are aware of:
 
 # Story / Bug fix
 
-- Prioritised list of PRs / issues are tracked in a Github Project, Remix IDE issues are managed by a prioritized backlog.
+- Prioritised list of PRs / issues are tracked in a GitHub Project, Remix IDE issues are managed by a prioritized backlog.
 - Every story can be executed by a single developer or a group of 2 or more developers (depending on the size and complexity)
-- Each dev should take the part he/she feels the most confortable with.
+- Each dev should take the part he/she feels the most comfortable with.
 - Later progress and discussion is updated directly on the issue or pull request (github).
 - When a developer or team decides on the story they want to work on (at the start of milestone for instance), they assign themselves to the issue. 
 - Documentation update should be done together with the story, or an issue with the label "documentation" has to be created.
@@ -109,7 +104,7 @@ Before starting coding, we should ensure all devs / contributors are aware of:
     Your feedback will often be better received if you pose it in the form of a question.
 
  - Pull request should be reviewed to comply to coding best practices.
- - You should take the responsability of the PR you are reviewing.
+ - You should take the responsibility of the PR you are reviewing.
  - You should make sure the app is viable after the PR is being merged.
  - You should make sure the PR is correctly tested (e2e tests, unit tests)
  - Ideally You should have enough knowledge to be able to fix related bugs.
@@ -124,10 +119,10 @@ Before starting coding, we should ensure all devs / contributors are aware of:
 # Milestone
 
  - A milestone should **only** contain items we are sure to finish.
- - The end of a milestone trigger a new release.
- - Milestone items and duration should take in account time spent in bugs fixing and support.
+ - The end of a milestone triggers a new release.
+ - Milestone items and duration should take into account time spent in bugs fixing and support.
  - The team should commit to the milestone duration.
- - If a dev finish early he/she can help other to push remaining tasks.
+ - If a dev finish early he/she can help others to push remaining tasks.
  - If a dev finish early he/she can work on specifying / integrating the next milestone.
  - A milestone duration is fixed at the start of the milestone (but should better not exceed 1 month).
  - Progress and issues regarding a milestone are discussed on regular standups.
@@ -135,13 +130,13 @@ Before starting coding, we should ensure all devs / contributors are aware of:
 
 # Milestone - Refinement meeting
 
- - A meeting is organized 3 weeks after the beggining of a round. This aims to :
+ - A meeting is organized 3 weeks after the beginning of a round. This aims to :
    - list what is left to do.
    - identify any blocker.
    - agree on a release date (which can be earlier 1 week after the meeting and not later than 4 weeks after the meeting.
    - add issues that are eligible to get in the release.
    - remove issues that aren't doable in time or represent a risk.
-   - plan for asking feedback about new features (in social medias).
+   - plan for asking feedback about new features (in social media).
 
 ---
 
@@ -172,7 +167,7 @@ Before starting coding, we should ensure all devs / contributors are aware of:
 ### 1) Bugs:
 - A critical bug should get the label `Blocker`, and every effort should be put to fix it.
 - Addressing a non critical and non planned bug can be done:
-  - After having notified in the `remix-dev` channel if the bug does not involves UX or public API changes.
+  - After having notified in the `remix-dev` channel if the bug does not involve UX or public API changes.
   - After a dev meeting (e.g the regular standup) if the bug involves any UX or public API changes.
 
 ### 2) Support:
@@ -182,11 +177,11 @@ Before starting coding, we should ensure all devs / contributors are aware of:
 ### 3) Documentation:
 
 - The documentation is done / updated just after the feature / release in a team effort.
-- Documentation work is filable as a github issue.
+- Documentation work is fileable as a github issue.
 - It is encouraged to find and link associated doc produced by the community (blog posts, videos, tutorials, ...)
 
 ---
 
 # Coding best practices
 
- - https://github.com/ethereum/remix-project/blob/master/best-practices.md
+ - https://github.com/ethereum/remix-project/blob/master/CONTRIBUTING.md

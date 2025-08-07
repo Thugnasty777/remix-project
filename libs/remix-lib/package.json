@@ -1,6 +1,6 @@
 {
   "name": "@remix-project/remix-lib",
-  "version": "0.5.6",
+  "version": "0.5.82",
   "description": "Library to various Remix tools",
   "contributors": [
     {
@@ -13,17 +13,25 @@
     }
   ],
   "main": "src/index.js",
+  "scripts": {
+    "test": "./../../node_modules/.bin/ts-node --require tsconfig-paths/register ./../../node_modules/.bin/tape ./test/tests.ts"
+  },
   "dependencies": {
-    "@ethereumjs/block": "^3.4.0",
-    "@ethereumjs/tx": "^3.3.0",
-    "@ethereumjs/vm": "^5.5.0",
+    "@ethereumjs/util": "^10.0.0",
     "async": "^2.1.2",
-    "ethereumjs-util": "^7.0.10",
-    "ethers": "^4.0.40",
+    "bn.js": "^5.1.2",
+    "create-hash": "^1.2.0",
+    "ethers": "^6.14.0",
+    "ethjs-util": "^0.1.6",
     "events": "^3.0.0",
-    "solc": "^0.7.4",
+    "from-exponential": "1.1.1",
+    "permissionless": "0.2.25",
+    "rlp": "^3.0.0",
+    "solc": "0.8.26",
     "string-similarity": "^4.0.4",
-    "web3": "^1.5.1"
+    "viem": "2.22.3",
+    "web3": "^4.1.1",
+    "web3-validator": "^2.0.0"
   },
   "devDependencies": {
     "@babel/core": "^7.4.5",
@@ -35,9 +43,6 @@
     "babel-eslint": "^7.1.1",
     "babelify": "^10.0.0",
     "tape": "^4.6.0"
-  },
-  "scripts": {
-    "test": "./../../node_modules/.bin/ts-node --require tsconfig-paths/register ./../../node_modules/.bin/tape ./test/tests.ts"
   },
   "publishConfig": {
     "access": "public"
@@ -53,5 +58,6 @@
   },
   "homepage": "https://github.com/ethereum/remix-project/tree/master/libs/remix-lib#readme",
   "typings": "src/index.d.ts",
-  "gitHead": "39700b7c076d53d0f857f341774a8448ea5c8da9"
+  "gitHead": "8bc4664be180d5b90cb328eb2b4c6bf2b45c7441",
+  "types": "./src/index.d.ts"
 }

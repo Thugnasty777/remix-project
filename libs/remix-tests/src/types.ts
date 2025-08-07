@@ -37,6 +37,8 @@ export interface TestResultInterface {
   expected?: string | number
   location?: string
   hhLogs?: []
+  web3?: any
+  debugTxHash?: string
 }
 export interface TestCbInterface {
   (error: Error | null | undefined, result: TestResultInterface) : void;
@@ -47,6 +49,7 @@ export interface ResultCbInterface {
 
 export interface Options {
   accounts?: string[] | null,
+  testFilePath?: string
   web3?: any
 }
 
@@ -57,13 +60,12 @@ export interface CompilerConfiguration {
   usingWorker?: boolean,
   runs: number
 }
-
 export interface CompilationErrors {
   name: string,
   errors: Array<Error>,
   message: string
 }
-
+// eslint-disable-next-line no-redeclare
 export class CompilationErrors extends Error {
   constructor (errors: Array<any>) {
     const mapError = errors.map((e) => { return e.formattedMessage || e.message })
